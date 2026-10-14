@@ -6,9 +6,9 @@ This directory contains the Arduino/C++ firmware for the **DOODLEDRY Smart Baby 
 
 The active firmware streams JSON through BLE service `FFF0`, notify characteristic `FFF1`, and command characteristic `FFF2`. These are the 16-bit Bluetooth base UUID equivalents of the 128-bit values in the app. Using the short service UUID lets the service and `DOODLEDRY-001` name fit in the advertisement. Notifications are split into 20-byte chunks; the app reassembles each JSON object. One packet is sent per second.
 
-Fields: `deviceId`, nullable `heartRate`, `spo2`, `temperature`, `activity`, `fingerDetected`, `heartRateValid`, `spo2Valid`, `temperatureValid`, `temperatureMeasuring`, `motionValid`, `poorSignal`, `fallDetected`, and nullable `battery`. A missing or invalid measurement is `null`; it is never replaced with a normal-looking value. Setting `ENABLE_CALIBRATION_DEBUG` to `1` adds raw PPG, temperature, and IMU fields in `debug`, visible only on the app's Diagnostics page in debug builds.
+Fields: `protocol: 2`, `deviceId`, `sensorModel: "MLX90614_IR_OBJECT"`, nullable `heartRate`, `spo2`, `temperature`, `ambientTemp`, `activity`, `fingerDetected`, `heartRateValid`, `spo2Valid`, `temperatureValid`, `temperatureMeasuring`, `motionValid`, `poorSignal`, `fallDetected`, and nullable `battery`. A missing or invalid measurement is `null`; it is never replaced with a normal-looking value. Setting `ENABLE_CALIBRATION_DEBUG` to `1` adds raw PPG, temperature, and IMU fields in `debug`, visible only on the app's Diagnostics page in debug builds.
 
-`TEMP_CALIBRATION_OFFSET` is `0.0 °C` until comparison with a reference thermometer at the final sensor distance. The MLX90614 reads object/surface temperature, not core body temperature. `BATTERY_DIVIDER_FITTED` defaults to `false`; set it to `true` only after verifying GPIO34 wiring and voltage scaling. Finger and motion thresholds near the top of the sketch are starting points for bench testing. The existing RED/IR ratio SpO₂ estimate is not clinically calibrated.
+The MLX90614 reads object/surface temperature, not core body temperature. `BATTERY_DIVIDER_FITTED` defaults to `false`; set it to `true` only after verifying GPIO34 wiring and voltage scaling. Finger and motion thresholds near the top of the sketch are starting points for bench testing. MAX30102 HR and SpO₂ estimates use the SparkFun library's 100-sample reference algorithm and require physical validation for this wearable placement.
 
 ---
 
@@ -27,8 +27,8 @@ Fields: `deviceId`, nullable `heartRate`, `spo2`, `temperature`, `activity`, `fi
 
 ## 🌟 System Overview
 
-The ESP32 firmware is specifically designed to work seamlessly **even if you only have a Heart Rate sensor and a Motion sensor**:
-- **MAX30102 Optical Pulse & SpO₂**: Reads real RED and IR signals. Pulse intervals produce BPM after three valid beats; three acceptable RED/IR windows are required for an SpO₂ estimate. Removing the finger transmits `null`.
+The ESP32 firmware reads each connected sensor independently. A missing sensor reports unavailable data:
+- **MAX30102 Optical Pulse & SpO₂**: Collects 100 actual RED/IR FIFO samples at 25 effective samples per second and recalculates each second using the SparkFun/Maxim reference algorithm. Removing contact, saturation, poor signal, or stale samples transmit `null`.
 - **MPU6050 6-Axis Motion & Activity Tracking**: Reads 3-axis accelerometer ($A_x, A_y, A_z$) and 3-axis gyroscope ($\omega_x, \omega_y, \omega_z$) at 50 Hz.
 - **Dynamic Activity State Classification (Updates when moving sensor)**:
   - **Still**: motion energy below 0.25.
@@ -47,9 +47,9 @@ The ESP32 firmware is specifically designed to work seamlessly **even if you onl
 | Item | Component | Description / Notes |
 |:---|:---|:---|
 | 1 | **ESP32 Dev Module** | ESP32-WROOM-32 / NodeMCU-32S (30-pin or 38-pin) |
-| 2 | **MAX30102** or **MAX30100** | Pulse Oximeter & Heart-Rate Sensor Module (I2C) |
+| 2 | **MAX30102** | Pulse Oximeter & Heart-Rate Sensor Module (I2C) |
 | 3 | **MPU6050** | 3-Axis Accelerometer & Gyroscope Sensor (I2C) |
-| 4 | **MLX90614 (GY-906)** | Contactless Infrared Body & Ambient Temp Sensor (I2C: 0x5A) |
+| 4 | **MLX90614 (GY-906)** | Contactless Infrared Object & Ambient Temp Sensor (I2C: 0x5A) |
 | 5 | **Voltage Divider** | Two 100kΩ resistors (for 3.7V LiPo battery ADC) |
 | 6 | **Jumper Wires & Breadboard** | For prototyping connections |
 | 7 | **Micro-USB Cable** | Data & power cable to connect ESP32 to PC |
@@ -86,7 +86,7 @@ All three sensors (**MAX30102**, **MPU6050**, and **MLX90614**) communicate over
                     |  +--- VCC           |   |      |
                     +------ GND           |   |      |
                             SDA --------------+------+       (MLX90614 I2C: 0x5A)
-                            SCL ---------------------+       [Infant IR Body Temp]
+                            SCL ---------------------+       [IR Object Temp]
 ```
 
 ### Detailed Pin Connections:
@@ -187,33 +187,27 @@ The firmware implements the GATT specifications defined in `lib/core/ble/ble_con
 ### Transmitted JSON Payload (Default Mode):
 ```json
 {
+  "protocol": 2,
   "deviceId": "DOODLEDRY-001",
+  "sensorModel": "MLX90614_IR_OBJECT",
   "heartRate": null,
   "spo2": null,
   "temperature": null,
+  "ambientTemp": null,
   "activity": "still",
   "fingerDetected": false,
   "heartRateValid": false,
   "spo2Valid": false,
   "temperatureValid": false,
-  "temperatureMeasuring": true,
-  "motionValid": true,
+  "temperatureMeasuring": false,
+  "motionValid": false,
   "poorSignal": false,
   "fallDetected": false,
   "battery": null
 }
 ```
 
-### Legacy 12-Byte Binary Mode
-The sketch retains this older mode for compatibility, but it does not carry the new per-sensor validity flags and is not suitable for production use. Keep `TELEMETRY_USE_JSON` set to `1`.
-- `[0]`: Heart Rate (0-255 BPM)
-- `[1]`: SpO₂ (0-100%)
-- `[2..3]`: Temperature in °C × 100 (Uint16 Big-Endian)
-- `[4..5]`: Accel X in m/s² × 100 (Int16 Big-Endian)
-- `[6..7]`: Accel Y in m/s² × 100 (Int16 Big-Endian)
-- `[8..9]`: Accel Z in m/s² × 100 (Int16 Big-Endian)
-- `[10]`: Flags (`bit 0`: Fall detected; `bits 1..3`: Activity code)
-- `[11]`: Battery percentage (0-100%)
+The app accepts this versioned JSON protocol only. The legacy binary packet is no longer sent or parsed.
 
 ---
 
@@ -223,6 +217,8 @@ The sketch retains this older mode for compatibility, but it does not carry the 
 - Check your wiring: ensure SDA is connected to **GPIO 21** and SCL to **GPIO 22**.
 - Some MAX30102 clone breakout boards require 5V on VIN rather than 3.3V because they have an onboard 3.3V LDO regulator.
 - Ensure the sensors are receiving sufficient current.
+
+If the startup I²C scan lists `0x57` and `0x68` but **not `0x5A`**, the ESP32 cannot see the MLX90614. Check the MLX90614 breakout's supported supply voltage, common ground, SDA/SCL continuity and orientation, and whether its pull-ups are compatible with the ESP32's 3.3V I²C pins. The app will show `--` for temperature until `0x5A` responds and three PEC-checked object measurements pass. No software offset can recover a sensor absent from the I²C bus.
 
 ### 2. Upload fails with `A fatal error occurred: Failed to connect to ESP32: No serial data received`
 - Hold down the **BOOT** button on the ESP32 while Arduino IDE displays `Connecting........_____`. Release it once writing starts.

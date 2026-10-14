@@ -22,11 +22,13 @@ class AlertRepository {
   int get unreadCount => _alerts.where((a) => !a.isSeen).length;
 
   /// Evaluates incoming sensor data against active thresholds and dispatches alerts
-  List<AlertModel> evaluateVitals(BabySensorData data, MonitoringThresholds thresholds) {
+  List<AlertModel> evaluateVitals(
+      BabySensorData data, MonitoringThresholds thresholds) {
     final now = DateTime.now();
     final newAlerts = <AlertModel>[];
 
-    bool shouldTrigger(AlertType type, {Duration customCooldown = _alertCooldown}) {
+    bool shouldTrigger(AlertType type,
+        {Duration customCooldown = _alertCooldown}) {
       final last = _lastAlertTrigger[type];
       if (last == null || now.difference(last) > customCooldown) {
         _lastAlertTrigger[type] = now;
@@ -37,15 +39,18 @@ class AlertRepository {
 
     // 1. Critical: Sudden Fall Detection
     if (data.fallDetected == true && thresholds.fallAlertEnabled) {
-      if (shouldTrigger(AlertType.fallDetected, customCooldown: const Duration(seconds: 20))) {
+      if (shouldTrigger(AlertType.fallDetected,
+          customCooldown: const Duration(seconds: 20))) {
         final alert = AlertModel(
           id: _uuid.v4(),
           title: "Sudden Movement / Impact Detected",
-          message: "The wearable sensor detected a sharp acceleration change. Please inspect the baby immediately.",
+          message:
+              "The wearable sensor detected a sharp acceleration change. Please inspect the baby immediately.",
           severity: AlertSeverity.critical,
           alertType: AlertType.fallDetected,
           sensorType: "Motion / Accelerometer",
-          readingValue: "X: ${data.accelerationX}, Y: ${data.accelerationY}, Z: ${data.accelerationZ} m/s²",
+          readingValue:
+              "X: ${data.accelerationX}, Y: ${data.accelerationY}, Z: ${data.accelerationZ} m/s²",
           timestamp: now,
           deviceId: data.deviceId,
           isSeen: false,
@@ -55,15 +60,21 @@ class AlertRepository {
     }
 
     // 2. Heart Rate Threshold Check (Only evaluate if sensor has active skin contact > 30 BPM)
-    if (data.heartRate != null && data.heartRate! > 30.0 && data.isDeviceConnected) {
+    if (data.heartRate != null &&
+        data.heartRate! > 30.0 &&
+        data.isDeviceConnected) {
       if (data.heartRate! > thresholds.maxHeartRate) {
         if (shouldTrigger(AlertType.heartRateHigh)) {
           final isCritical = data.heartRate! > (thresholds.maxHeartRate + 25);
           final alert = AlertModel(
             id: _uuid.v4(),
-            title: isCritical ? "Critical: High Heart Rate" : "Elevated Heart Rate Warning",
-            message: "Heart rate is ${data.heartRate!.toStringAsFixed(0)} BPM, exceeding configured limit of ${thresholds.maxHeartRate.toStringAsFixed(0)} BPM.",
-            severity: isCritical ? AlertSeverity.critical : AlertSeverity.warning,
+            title: isCritical
+                ? "Critical: High Heart Rate"
+                : "Elevated Heart Rate Warning",
+            message:
+                "Heart rate is ${data.heartRate!.toStringAsFixed(0)} BPM, exceeding configured limit of ${thresholds.maxHeartRate.toStringAsFixed(0)} BPM.",
+            severity:
+                isCritical ? AlertSeverity.critical : AlertSeverity.warning,
             alertType: AlertType.heartRateHigh,
             sensorType: "Heart Rate",
             readingValue: "${data.heartRate!.toStringAsFixed(0)} BPM",
@@ -78,9 +89,13 @@ class AlertRepository {
           final isCritical = data.heartRate! < (thresholds.minHeartRate - 20);
           final alert = AlertModel(
             id: _uuid.v4(),
-            title: isCritical ? "Critical: Low Heart Rate" : "Low Heart Rate Warning",
-            message: "Heart rate is ${data.heartRate!.toStringAsFixed(0)} BPM, below configured threshold of ${thresholds.minHeartRate.toStringAsFixed(0)} BPM.",
-            severity: isCritical ? AlertSeverity.critical : AlertSeverity.warning,
+            title: isCritical
+                ? "Critical: Low Heart Rate"
+                : "Low Heart Rate Warning",
+            message:
+                "Heart rate is ${data.heartRate!.toStringAsFixed(0)} BPM, below configured threshold of ${thresholds.minHeartRate.toStringAsFixed(0)} BPM.",
+            severity:
+                isCritical ? AlertSeverity.critical : AlertSeverity.warning,
             alertType: AlertType.heartRateLow,
             sensorType: "Heart Rate",
             readingValue: "${data.heartRate!.toStringAsFixed(0)} BPM",
@@ -100,9 +115,11 @@ class AlertRepository {
           final isCritical = data.spo2! < 90.0;
           final alert = AlertModel(
             id: _uuid.v4(),
-            title: isCritical ? "Critical: Low Oxygen Saturation" : "Low SpO₂ Warning",
-            message: "Oxygen level is ${data.spo2!.toStringAsFixed(0)}%, below threshold of ${thresholds.minSpo2.toStringAsFixed(0)}%.",
-            severity: isCritical ? AlertSeverity.critical : AlertSeverity.warning,
+            title: isCritical ? "Very Low SpO₂ Estimate" : "Low SpO₂ Estimate",
+            message:
+                "The optical sensor estimated ${data.spo2!.toStringAsFixed(0)}%, below the configured ${thresholds.minSpo2.toStringAsFixed(0)}% threshold. Confirm with a validated device.",
+            severity:
+                isCritical ? AlertSeverity.critical : AlertSeverity.warning,
             alertType: AlertType.spo2Low,
             sensorType: "SpO₂ Sensor",
             readingValue: "${data.spo2!.toStringAsFixed(0)}%",
@@ -115,16 +132,23 @@ class AlertRepository {
       }
     }
 
-    // 4. Temperature Threshold Check
-    if (data.temperature != null && data.isDeviceConnected) {
+    // IR object temperature is not calibrated core body temperature. Do not
+    // issue fever/hypothermia alerts from this prototype surface measurement.
+    if (data.temperature != null &&
+        data.isDeviceConnected &&
+        data.sensorModel == 'VALIDATED_CORE_BODY_SENSOR') {
       if (data.temperature! > thresholds.maxTemperatureCelsius) {
         if (shouldTrigger(AlertType.temperatureHigh)) {
           final isCritical = data.temperature! >= 39.0;
           final alert = AlertModel(
             id: _uuid.v4(),
-            title: isCritical ? "Critical: High Fever Detected" : "Elevated Temperature Warning",
-            message: "Body temperature is ${data.temperature!.toStringAsFixed(1)}°C, exceeding configured upper threshold of ${thresholds.maxTemperatureCelsius.toStringAsFixed(1)}°C.",
-            severity: isCritical ? AlertSeverity.critical : AlertSeverity.warning,
+            title: isCritical
+                ? "Critical: High Fever Detected"
+                : "Elevated Temperature Warning",
+            message:
+                "Body temperature is ${data.temperature!.toStringAsFixed(1)}°C, exceeding configured upper threshold of ${thresholds.maxTemperatureCelsius.toStringAsFixed(1)}°C.",
+            severity:
+                isCritical ? AlertSeverity.critical : AlertSeverity.warning,
             alertType: AlertType.temperatureHigh,
             sensorType: "Temperature Sensor",
             readingValue: "${data.temperature!.toStringAsFixed(1)} °C",
@@ -139,7 +163,8 @@ class AlertRepository {
           final alert = AlertModel(
             id: _uuid.v4(),
             title: "Low Temperature Reading",
-            message: "Body temperature is ${data.temperature!.toStringAsFixed(1)}°C, below threshold of ${thresholds.minTemperatureCelsius.toStringAsFixed(1)}°C.",
+            message:
+                "Body temperature is ${data.temperature!.toStringAsFixed(1)}°C, below threshold of ${thresholds.minTemperatureCelsius.toStringAsFixed(1)}°C.",
             severity: AlertSeverity.warning,
             alertType: AlertType.temperatureLow,
             sensorType: "Temperature Sensor",
@@ -154,13 +179,18 @@ class AlertRepository {
     }
 
     // 5. Battery Check
-    if (data.batteryPercentage != null && data.batteryPercentage! <= thresholds.lowBatteryThreshold) {
-      if (shouldTrigger(AlertType.batteryLow, customCooldown: const Duration(minutes: 5))) {
+    if (data.batteryPercentage != null &&
+        data.batteryPercentage! <= thresholds.lowBatteryThreshold) {
+      if (shouldTrigger(AlertType.batteryLow,
+          customCooldown: const Duration(minutes: 5))) {
         final alert = AlertModel(
           id: _uuid.v4(),
           title: "Low Wearable Battery",
-          message: "Device battery is at ${data.batteryPercentage}%. Please recharge the monitoring module.",
-          severity: data.batteryPercentage! <= 10 ? AlertSeverity.critical : AlertSeverity.warning,
+          message:
+              "Device battery is at ${data.batteryPercentage}%. Please recharge the monitoring module.",
+          severity: data.batteryPercentage! <= 10
+              ? AlertSeverity.critical
+              : AlertSeverity.warning,
           alertType: AlertType.batteryLow,
           sensorType: "Battery",
           readingValue: "${data.batteryPercentage}%",

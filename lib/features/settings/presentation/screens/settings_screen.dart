@@ -49,7 +49,8 @@ class SettingsScreen extends ConsumerWidget {
                         color: AppColors.primaryContainer,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.person_rounded, color: AppColors.primary, size: 30),
+                      child: const Icon(Icons.person_rounded,
+                          color: AppColors.primary, size: 30),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -57,20 +58,26 @@ class SettingsScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user?.displayName ?? babyProfile?.caregiverName ?? 'Sarah Jenkins',
-                            style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700),
+                            user?.displayName ??
+                                babyProfile?.caregiverName ??
+                                'Sarah Jenkins',
+                            style: AppTextStyles.titleMedium
+                                .copyWith(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             user?.email ?? 'parent@doodledry.com',
                             style: AppTextStyles.bodySmall.copyWith(
-                              color: isDark ? AppColors.textMutedDark : AppColors.textSecondaryLight,
+                              color: isDark
+                                  ? AppColors.textMutedDark
+                                  : AppColors.textSecondaryLight,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             "Baby: ${babyProfile?.name ?? 'Leo'} (${babyProfile?.ageDisplay ?? '4 months old'})",
-                            style: AppTextStyles.label.copyWith(color: AppColors.primary),
+                            style: AppTextStyles.label
+                                .copyWith(color: AppColors.primary),
                           ),
                         ],
                       ),
@@ -79,7 +86,8 @@ class SettingsScreen extends ConsumerWidget {
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       onPressed: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const BabyProfileScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const BabyProfileScreen()),
                         );
                       },
                     ),
@@ -92,7 +100,9 @@ class SettingsScreen extends ConsumerWidget {
               Text(
                 "PREFERENCES & UNITS",
                 style: AppTextStyles.label.copyWith(
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -103,40 +113,62 @@ class SettingsScreen extends ConsumerWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.thermostat_rounded, color: AppColors.temperature),
-                      title: Text("Temperature Unit", style: AppTextStyles.titleSmall),
+                      leading: const Icon(Icons.thermostat_rounded,
+                          color: AppColors.temperature),
+                      title: Text("Temperature Unit",
+                          style: AppTextStyles.titleSmall),
                       trailing: Text(
-                        settings.isFahrenheit ? "Fahrenheit (°F)" : "Celsius (°C)",
-                        style: AppTextStyles.label.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                        settings.isFahrenheit
+                            ? "Fahrenheit (°F)"
+                            : "Celsius (°C)",
+                        style: AppTextStyles.label.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold),
                       ),
                       onTap: () {
-                        ref.read(settingsProvider.notifier).toggleTemperatureUnit();
+                        ref
+                            .read(settingsProvider.notifier)
+                            .toggleTemperatureUnit();
                       },
                     ),
                     const Divider(),
-                    if (kDebugMode) SwitchListTile.adaptive(
-                      secondary: const Icon(Icons.dark_mode_outlined, color: AppColors.secondary),
-                      title: Text("Dark Mode", style: AppTextStyles.titleSmall),
-                      value: settings.isDarkMode,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).toggleTheme(v),
-                    ),
+                    if (kDebugMode)
+                      SwitchListTile.adaptive(
+                        secondary: const Icon(Icons.dark_mode_outlined,
+                            color: AppColors.secondary),
+                        title:
+                            Text("Dark Mode", style: AppTextStyles.titleSmall),
+                        value: settings.isDarkMode,
+                        activeColor: AppColors.primary,
+                        onChanged: (v) =>
+                            ref.read(settingsProvider.notifier).toggleTheme(v),
+                      ),
                     const Divider(),
                     SwitchListTile.adaptive(
-                      secondary: const Icon(Icons.notifications_active_outlined, color: AppColors.warning),
-                      title: Text("Notifications & Alerts", style: AppTextStyles.titleSmall),
+                      secondary: const Icon(Icons.notifications_active_outlined,
+                          color: AppColors.warning),
+                      title: Text("Notifications & Alerts",
+                          style: AppTextStyles.titleSmall),
                       value: settings.notificationsEnabled,
                       activeColor: AppColors.primary,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).toggleNotifications(v),
+                      onChanged: (v) => ref
+                          .read(settingsProvider.notifier)
+                          .toggleNotifications(v),
                     ),
                     const Divider(),
                     SwitchListTile.adaptive(
-                      secondary: const Icon(Icons.cloud_sync_outlined, color: AppColors.primary),
-                      title: Text("Cloud Database Sync", style: AppTextStyles.titleSmall),
-                      subtitle: const Text("Sync vital records with Cloud Firestore", style: TextStyle(fontSize: 11)),
+                      secondary: const Icon(Icons.cloud_sync_outlined,
+                          color: AppColors.primary),
+                      title: Text("Cloud Database Sync",
+                          style: AppTextStyles.titleSmall),
+                      subtitle: const Text(
+                          "Sync vital records with Cloud Firestore",
+                          style: TextStyle(fontSize: 11)),
                       value: settings.cloudSyncEnabled,
                       activeColor: AppColors.primary,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).toggleCloudSync(v),
+                      onChanged: (v) => ref
+                          .read(settingsProvider.notifier)
+                          .toggleCloudSync(v),
                     ),
                   ],
                 ),
@@ -147,7 +179,9 @@ class SettingsScreen extends ConsumerWidget {
               Text(
                 "HARDWARE & SAFETY",
                 style: AppTextStyles.label.copyWith(
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -158,48 +192,53 @@ class SettingsScreen extends ConsumerWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.tune_rounded, color: AppColors.primary),
-                      title: Text("Monitoring Thresholds", style: AppTextStyles.titleSmall),
-                      subtitle: const Text("Configure alert trigger limits for vitals", style: TextStyle(fontSize: 11)),
+                      leading: const Icon(Icons.tune_rounded,
+                          color: AppColors.primary),
+                      title: Text("Monitoring Thresholds",
+                          style: AppTextStyles.titleSmall),
+                      subtitle: const Text(
+                          "Configure alert trigger limits for vitals",
+                          style: TextStyle(fontSize: 11)),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const ThresholdSettingsScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const ThresholdSettingsScreen()),
                         );
                       },
                     ),
                     const Divider(),
                     ListTile(
-                      leading: const Icon(Icons.bluetooth_rounded, color: AppColors.secondary),
-                      title: Text("Connected Wearable Device", style: AppTextStyles.titleSmall),
-                      subtitle: const Text("Scan, pair, and check BLE signal", style: TextStyle(fontSize: 11)),
+                      leading: const Icon(Icons.bluetooth_rounded,
+                          color: AppColors.secondary),
+                      title: Text("Connected Wearable Device",
+                          style: AppTextStyles.titleSmall),
+                      subtitle: const Text("Scan, pair, and check BLE signal",
+                          style: TextStyle(fontSize: 11)),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const DeviceConnectionScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const DeviceConnectionScreen()),
                         );
                       },
                     ),
                     const Divider(),
                     ListTile(
-                      leading: const Icon(Icons.health_and_safety_outlined, color: AppColors.success),
-                      title: Text("Subsystem Diagnostics", style: AppTextStyles.titleSmall),
-                      subtitle: const Text("View sensor health and packet validation", style: TextStyle(fontSize: 11)),
+                      leading: const Icon(Icons.health_and_safety_outlined,
+                          color: AppColors.success),
+                      title: Text("Subsystem Diagnostics",
+                          style: AppTextStyles.titleSmall),
+                      subtitle: const Text(
+                          "View sensor health and packet validation",
+                          style: TextStyle(fontSize: 11)),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const DiagnosticsScreen()),
                         );
                       },
-                    ),
-                    const Divider(),
-                    SwitchListTile.adaptive(
-                      secondary: const Icon(Icons.science_rounded, color: AppColors.simulationBadge),
-                      title: Text("Hardware Simulation Mode", style: AppTextStyles.titleSmall),
-                      subtitle: const Text("Stream virtual vitals for testing & demonstration", style: TextStyle(fontSize: 11)),
-                      value: settings.isSimulationMode,
-                      activeColor: AppColors.simulationBadge,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).toggleSimulationMode(v),
                     ),
                   ],
                 ),
@@ -210,7 +249,9 @@ class SettingsScreen extends ConsumerWidget {
               Text(
                 "ACCOUNT",
                 style: AppTextStyles.label.copyWith(
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -221,23 +262,30 @@ class SettingsScreen extends ConsumerWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.baby_changing_station_rounded, color: AppColors.primary),
-                      title: Text("Edit Baby Profile", style: AppTextStyles.titleSmall),
+                      leading: const Icon(Icons.baby_changing_station_rounded,
+                          color: AppColors.primary),
+                      title: Text("Edit Baby Profile",
+                          style: AppTextStyles.titleSmall),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const BabyProfileScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const BabyProfileScreen()),
                         );
                       },
                     ),
                     const Divider(),
                     ListTile(
-                      leading: const Icon(Icons.logout_rounded, color: AppColors.danger),
-                      title: Text("Log Out", style: AppTextStyles.titleSmall.copyWith(color: AppColors.danger)),
+                      leading: const Icon(Icons.logout_rounded,
+                          color: AppColors.danger),
+                      title: Text("Log Out",
+                          style: AppTextStyles.titleSmall
+                              .copyWith(color: AppColors.danger)),
                       onTap: () async {
                         await ref.read(authRepositoryProvider).logout();
                         Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const LoginScreen()),
                           (route) => false,
                         );
                       },
@@ -254,7 +302,9 @@ class SettingsScreen extends ConsumerWidget {
                     Text(
                       "DOODLEDRY v1.0.0 (Production Architecture)",
                       style: AppTextStyles.bodySmall.copyWith(
-                        color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                        color: isDark
+                            ? AppColors.textMutedDark
+                            : AppColors.textMutedLight,
                         fontSize: 11,
                       ),
                     ),
@@ -262,7 +312,9 @@ class SettingsScreen extends ConsumerWidget {
                     Text(
                       "Smart Wearable Baby Monitoring Platform",
                       style: AppTextStyles.label.copyWith(
-                        color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                        color: isDark
+                            ? AppColors.textMutedDark
+                            : AppColors.textMutedLight,
                         fontSize: 10,
                       ),
                     ),

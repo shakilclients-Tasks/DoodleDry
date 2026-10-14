@@ -5,16 +5,16 @@
  * =========================================================================================
  *
  * Description:
- *   Production-grade ESP32 firmware for the DOODLEDRY Smart Baby Monitoring Wearable.
+ *   ESP32 prototype firmware for the DOODLEDRY wearable.
  *   This code samples vital sensors (MAX30102 for Heart Rate & SpO2, MPU6050 for 6-Axis
  *   Motion & Fall Detection), processes biological bounds, detects sudden infant falls,
- *   classifies dynamic activity (sleeping, awake, active, restless), and streams
+ *   classifies activity, and streams
  *   real-time telemetry over Bluetooth Low Energy (BLE) to the DOODLEDRY Flutter App.
  *
  * Compatible Sensors:
- *   - MAX30102 / MAX30100 Pulse Oximeter & Optical Heart Rate Sensor (I2C: 0x57)
+ *   - MAX30102 Pulse Oximeter & Optical Heart Rate Sensor (I2C: 0x57)
  *   - MPU6050 6-Axis Motion Tracking Accelerometer & Gyroscope (I2C: 0x68 / 0x69)
- *   - MLX90614 Non-Contact Infrared Body & Ambient Temperature Sensor (I2C: 0x5A)
+ *   - MLX90614 Non-Contact Infrared Object & Ambient Temperature Sensor (I2C: 0x5A)
  *   - On-board LiPo Battery Voltage Sensing (Analog ADC pin GPIO 34)
  *   - Onboard Status LED (GPIO 2)
  *
@@ -52,7 +52,7 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include "MAX30105.h"
-#include "heartRate.h"
+#include "spo2_algorithm.h"
 
 // =========================================================================================
 //                             CONFIGURATION & TOGGLES
@@ -60,7 +60,6 @@
 
 #define DEVICE_NAME             "DOODLEDRY-001"
 #define BABY_ID                 "baby_default"
-#define TELEMETRY_USE_JSON      1
 #ifndef ENABLE_CALIBRATION_DEBUG
 #define ENABLE_CALIBRATION_DEBUG 0 // Development only: exposes raw data in Diagnostics
 #endif
@@ -76,7 +75,7 @@
 // All 3 sensors connect to the SAME I2C pins (SDA=GPIO 21, SCL=GPIO 22) with ZERO conflict:
 // - MAX30102: Fixed address 0x57 (Heart Rate & SpO2)
 // - MPU6050:  Default address 0x68 (Motion & Falls), Alternate 0x69
-// - MLX90614: Fixed address 0x5A (Non-Contact Infrared Body & Room Temp)
+// - MLX90614: Fixed address 0x5A (Non-Contact Infrared Object & Ambient Temp)
 // -----------------------------------------------------------------------------------------
 #define MAX30102_I2C_ADDR       0x57
 #define MPU6050_I2C_ADDR        0x68
@@ -84,8 +83,8 @@
 #define MLX90614_I2C_ADDR       0x5A
 
 // MLX90614 Internal RAM Registers
-#define MLX90614_TAMB           0x06      // Ambient / Nursery Room Temp register
-#define MLX90614_TOBJ1          0x07      // Object / Infant Body Temp register
+#define MLX90614_TAMB           0x06      // Local sensor ambient temperature register
+#define MLX90614_TOBJ1          0x07      // IR object temperature register
 
 // MPU6050 Internal Registers
 #define MPU6050_CONFIG          0x1A
@@ -115,9 +114,7 @@
 #define TELEMETRY_INTERVAL_MS   1000      // Stream BLE telemetry every 1 second
 #define MOTION_SAMPLE_INTERVAL  20        // Sample MPU6050 at 50 Hz (every 20 ms)
 
-// Bench-calibration settings. The zero offset must only change after comparison
-// with a reference thermometer at the intended sensor distance and placement.
-const float TEMP_CALIBRATION_OFFSET = 0.0f;
+// Contact and signal thresholds must be verified with the final optical placement.
 const float FINGER_IR_THRESHOLD = 25000.0f;
 const float MIN_PPG_AC = 80.0f;
 const float MAX_MOTION_FOR_PPG = 2.8f;
@@ -126,30 +123,8 @@ const float MOTION_ACTIVE_THRESHOLD = 1.20f;
 const unsigned long MOTION_DWELL_MS = 600;
 const unsigned long PPG_TIMEOUT_MS = 2500;
 const unsigned long MOTION_TIMEOUT_MS = 1500;
-const unsigned long TEMP_TIMEOUT_MS = 7000;
 // Enable only after checking that the GPIO34 voltage divider is fitted.
 const bool BATTERY_DIVIDER_FITTED = false;
-
-// -----------------------------------------------------------------------------------------
-// TEMPERATURE SENSOR HARDWARE CONFIGURATION:
-//   TEMP_SENSOR_NONE              (0) : No sensor (sends "null")
-//   TEMP_SENSOR_MLX90614          (1) : MLX90614 Contactless Infrared Sensor (I2C: 0x5A)
-//   TEMP_SENSOR_MAX30102_INTERNAL (2) : MAX30102 on-chip sensor (maxSensor.readTemperature())
-//   TEMP_SENSOR_ANALOG_NTC        (3) : Analog thermistor / LM35 on GPIO 35
-// -----------------------------------------------------------------------------------------
-#define TEMP_SENSOR_NONE               0
-#define TEMP_SENSOR_MLX90614           1
-#define TEMP_SENSOR_MAX30102_INTERNAL  2
-#define TEMP_SENSOR_ANALOG_NTC         3
-
-#ifndef TEMP_SENSOR_TYPE
-#define TEMP_SENSOR_TYPE               TEMP_SENSOR_MLX90614   // Default to MLX90614 Non-Contact Sensor!
-#endif
-
-#define TEMP_ADC_PIN                   35                     // Analog ADC pin (GPIO 35) if using thermistor
-
-// Backward-compatible toggle:
-#define HAS_TEMPERATURE_SENSOR         (TEMP_SENSOR_TYPE != TEMP_SENSOR_NONE)
 
 // =========================================================================================
 //                                   GLOBAL OBJECTS & STATE
@@ -177,20 +152,20 @@ bool poorSignal = false;
 uint32_t rawIR = 0, rawRed = 0;
 float ppgQuality = 0.0f;
 unsigned long lastPpgSampleTime = 0;
-unsigned long fingerSince = 0;
-unsigned long lastValidBeatTime = 0;
-uint32_t irMin = UINT32_MAX, irMax = 0, redMin = UINT32_MAX, redMax = 0;
-uint16_t ppgWindowCount = 0;
-float spo2Window[3] = {0};
-byte spo2WindowCount = 0, spo2WindowSpot = 0;
+// MAXREFDES117 reference algorithm expects 100 samples at 25 samples/second.
+static const uint16_t PPG_BUFFER_SIZE = 100;
+static const uint16_t PPG_STEP_SIZE = 25;
+uint32_t irBuffer[PPG_BUFFER_SIZE] = {0};
+uint32_t redBuffer[PPG_BUFFER_SIZE] = {0};
+uint16_t ppgSampleCount = 0;
+unsigned long lastPpgCalculationTime = 0;
 
-// Temperature Sensor State (MLX90614 Non-Contact IR + MAX30102 Fallback)
+// Temperature is the MLX90614 IR object's surface temperature, not core body temperature.
 float liveTemperature = 0.0f;
 float liveAmbientTemperature = 0.0f;
 float rawObjectTemperature = 0.0f;
 bool temperatureValid = false;
 byte temperatureSampleCount = 0;
-unsigned long lastValidTemperatureTime = 0;
 
 // 3-Axis Accelerometer (in m/s^2) & Gyroscope (in deg/s)
 float accelX = 0.0f;
@@ -222,27 +197,6 @@ unsigned long lastTelemetryTime = 0;
 unsigned long lastMotionSampleTime = 0;
 unsigned long lastMpuInitAttempt = 0;
 unsigned long lastMaxInitAttempt = 0;
-
-// Heart Beat Detection Buffers
-const byte RATE_SIZE = 4;
-byte rates[RATE_SIZE];
-byte rateSpot = 0;
-long lastBeat = 0;
-byte validRateCount = 0;
-
-// 12-Byte Binary Packet Fallback Layout (as per BlePacketParser.dart)
-#pragma pack(push, 1)
-struct DoodleDryBinaryPacket {
-  uint8_t heartRate;      // [0]: Heart rate BPM (0..255)
-  uint8_t spo2;           // [1]: SpO2 % (0..100)
-  uint16_t temperature;   // [2..3]: Temp in C * 100 (Big-Endian)
-  int16_t accelX;         // [4..5]: Ax in m/s^2 * 100 (Int16 Big-Endian)
-  int16_t accelY;         // [6..7]: Ay in m/s^2 * 100 (Int16 Big-Endian)
-  int16_t accelZ;         // [8..9]: Az in m/s^2 * 100 (Int16 Big-Endian)
-  uint8_t flags;          // [10]: bit 0: fallDetected, bits 1..3: activity (0: sleep, 1: awake, 2: active, 3: restless)
-  uint8_t battery;        // [11]: Battery % (0..100)
-};
-#pragma pack(pop)
 
 // =========================================================================================
 //                             BLE CALLBACK HANDLERS
@@ -370,7 +324,7 @@ bool initMAX30102() {
     byte ledBrightness = 60; // 0 to 255 (~12mA)
     byte sampleAverage = 4;
     byte ledMode = 2;        // Red + IR mode
-    int sampleRate = 400;    // 400 Hz internal sampling
+    int sampleRate = 100;    // 100 Hz / 4-sample average = 25 FIFO samples/s
     int pulseWidth = 411;    // 411 us (18-bit ADC)
     int adcRange = 4096;
     maxSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange);
@@ -553,6 +507,15 @@ void readMPU6050() {
   }
 }
 
+void clearPpgReadings() {
+  heartRateValid = false;
+  spo2Valid = false;
+  liveHeartRate = 0.0f;
+  liveSpo2 = 0.0f;
+  ppgSampleCount = 0;
+  lastPpgCalculationTime = 0;
+}
+
 void readMAX30102() {
   if (!max30102Present) {
     if (millis() - lastMaxInitAttempt >= 5000) {
@@ -560,8 +523,8 @@ void readMAX30102() {
       max30102Present = initMAX30102();
     }
     fingerDetected = false;
-    heartRateValid = false;
-    spo2Valid = false;
+    poorSignal = false;
+    clearPpgReadings();
     return;
   }
   maxSensor.check();
@@ -572,98 +535,75 @@ void readMAX30102() {
     rawIR = irValue;
     rawRed = redValue;
     lastPpgSampleTime = millis();
-    if (irValue < FINGER_IR_THRESHOLD || redValue < 1000) {
+    if (irValue < FINGER_IR_THRESHOLD || redValue < 1000 ||
+        irValue >= 260000 || redValue >= 260000) {
       fingerDetected = false;
-      heartRateValid = false;
-      spo2Valid = false;
       poorSignal = false;
-      liveHeartRate = liveSpo2 = 0.0f;
-      validRateCount = rateSpot = spo2WindowCount = spo2WindowSpot = 0;
-      ppgWindowCount = 0;
-      irMin = redMin = UINT32_MAX;
-      irMax = redMax = 0;
-      lastBeat = 0;
+      clearPpgReadings();
       continue;
     }
     if (!fingerDetected) {
       fingerDetected = true;
-      fingerSince = millis();
-      validRateCount = spo2WindowCount = 0;
-      lastBeat = 0;
+      poorSignal = false;
+      clearPpgReadings();
     }
     if (motionValid && motionEnergy > MAX_MOTION_FOR_PPG) {
       poorSignal = true;
-      heartRateValid = spo2Valid = false;
-      validRateCount = spo2WindowCount = ppgWindowCount = 0;
-      lastBeat = 0;
+      clearPpgReadings();
       continue;
     }
-    if (checkForBeat(irValue)) {
-      unsigned long now = millis();
-      unsigned long interval = now - lastBeat;
-      lastBeat = now;
-      if (interval >= 333 && interval <= 1500 && now - fingerSince > 2000) {
-        rates[rateSpot] = (byte)(60000.0f / interval);
-        rateSpot = (rateSpot + 1) % RATE_SIZE;
-        if (validRateCount < RATE_SIZE) validRateCount++;
-        if (validRateCount >= 3) {
-          byte ordered[RATE_SIZE];
-          for (byte i = 0; i < validRateCount; i++) ordered[i] = rates[i];
-          for (byte i = 0; i < validRateCount; i++)
-            for (byte j = i + 1; j < validRateCount; j++)
-              if (ordered[j] < ordered[i]) { byte t = ordered[i]; ordered[i] = ordered[j]; ordered[j] = t; }
-          liveHeartRate = ordered[validRateCount / 2];
-          heartRateValid = !poorSignal;
-          lastValidBeatTime = now;
-        }
-      } else if (interval > 1500) {
-        validRateCount = 0;
-        heartRateValid = false;
+    irBuffer[ppgSampleCount] = irValue;
+    redBuffer[ppgSampleCount] = redValue;
+    ppgSampleCount++;
+    if (ppgSampleCount == PPG_BUFFER_SIZE) {
+      uint32_t irMin = UINT32_MAX, irMax = 0, redMin = UINT32_MAX, redMax = 0;
+      for (uint16_t i = 0; i < PPG_BUFFER_SIZE; i++) {
+        irMin = min(irMin, irBuffer[i]);
+        irMax = max(irMax, irBuffer[i]);
+        redMin = min(redMin, redBuffer[i]);
+        redMax = max(redMax, redBuffer[i]);
       }
-    }
-    if (irValue < irMin) irMin = irValue;
-    if (irValue > irMax) irMax = irValue;
-    if (redValue < redMin) redMin = redValue;
-    if (redValue > redMax) redMax = redValue;
-    if (++ppgWindowCount >= 300) {
-      float acIR = (float)(irMax - irMin), acRed = (float)(redMax - redMin);
-      float dcIR = ((float)irMax + irMin) / 2.0f;
-      float dcRed = ((float)redMax + redMin) / 2.0f;
-      ppgQuality = dcIR > 0 ? acIR / dcIR : 0;
-      poorSignal = acIR < MIN_PPG_AC || acRed < MIN_PPG_AC ||
-          ppgQuality < 0.002f || ppgQuality > 0.20f;
-      if (!poorSignal && dcRed > 10000 && dcIR > 10000) {
-        float ratio = (acRed / dcRed) / (acIR / dcIR);
-        // Existing ratio estimate. Must be calibrated against a reference oximeter;
-        // no value is clamped into a healthy band.
-        float estimate = 104.0f - 17.0f * ratio;
-        if (ratio > 0.2f && ratio < 1.8f && estimate >= 50.0f && estimate <= 100.0f) {
-          spo2Window[spo2WindowSpot] = estimate;
-          spo2WindowSpot = (spo2WindowSpot + 1) % 3;
-          if (spo2WindowCount < 3) spo2WindowCount++;
-          if (spo2WindowCount == 3 && millis() - fingerSince > 5000) {
-            float a = spo2Window[0], b = spo2Window[1], c = spo2Window[2];
-            liveSpo2 = max(min(a, b), min(max(a, b), c));
-            spo2Valid = true;
-          }
-        } else {
-          poorSignal = true;
-        }
+      const float irDcFloor = 10000.0f;
+      ppgQuality = ((float)irMax - irMin) / max((float)irMax, irDcFloor);
+      poorSignal = irMin < FINGER_IR_THRESHOLD || redMin < 1000 ||
+          irMax >= 260000 || redMax >= 260000 ||
+          irMax - irMin < MIN_PPG_AC || redMax - redMin < MIN_PPG_AC ||
+          ppgQuality < 0.001f || ppgQuality > 0.25f;
+
+      int32_t calculatedSpo2 = -999, calculatedHr = -999;
+      int8_t validSpo2 = 0, validHr = 0;
+      if (!poorSignal) {
+        maxim_heart_rate_and_oxygen_saturation(irBuffer, PPG_BUFFER_SIZE,
+            redBuffer, &calculatedSpo2, &validSpo2, &calculatedHr, &validHr);
       }
-      if (poorSignal) {
-        heartRateValid = spo2Valid = false;
-        spo2WindowCount = 0;
+      heartRateValid = !poorSignal && validHr == 1 &&
+          calculatedHr >= 40 && calculatedHr <= 240;
+      spo2Valid = !poorSignal && validSpo2 == 1 &&
+          calculatedSpo2 >= 50 && calculatedSpo2 <= 100;
+      liveHeartRate = heartRateValid ? (float)calculatedHr : 0.0f;
+      liveSpo2 = spo2Valid ? (float)calculatedSpo2 : 0.0f;
+      lastPpgCalculationTime = millis();
+      if (!heartRateValid && !spo2Valid) poorSignal = true;
+
+      // Keep 75 measured samples and recalculate after 25 new ones (1 second).
+      for (uint16_t i = PPG_STEP_SIZE; i < PPG_BUFFER_SIZE; i++) {
+        irBuffer[i - PPG_STEP_SIZE] = irBuffer[i];
+        redBuffer[i - PPG_STEP_SIZE] = redBuffer[i];
       }
-      ppgWindowCount = 0;
-      irMin = redMin = UINT32_MAX;
-      irMax = redMax = 0;
+      ppgSampleCount = PPG_BUFFER_SIZE - PPG_STEP_SIZE;
     }
   }
   if (millis() - lastPpgSampleTime > PPG_TIMEOUT_MS) {
-    fingerDetected = heartRateValid = spo2Valid = false;
+    fingerDetected = false;
+    poorSignal = false;
+    clearPpgReadings();
+    if (millis() - lastPpgSampleTime > 5000) max30102Present = false;
+  }
+  if (lastPpgCalculationTime != 0 &&
+      millis() - lastPpgCalculationTime > PPG_TIMEOUT_MS) {
+    heartRateValid = spo2Valid = false;
     liveHeartRate = liveSpo2 = 0.0f;
   }
-  if (millis() - lastValidBeatTime > PPG_TIMEOUT_MS) heartRateValid = false;
 }
 
 // =========================================================================================
@@ -730,23 +670,20 @@ bool initMLX90614() {
 void readTemperature() {
   float objTemp = readMLX90614Temp(MLX90614_TOBJ1);
   float ambTemp = readMLX90614Temp(MLX90614_TAMB);
-  if (isfinite(objTemp) && objTemp >= 30.0f && objTemp <= 44.0f) {
+  rawObjectTemperature = objTemp;
+  liveAmbientTemperature = (isfinite(ambTemp) && ambTemp >= -20.0f && ambTemp <= 85.0f)
+      ? ambTemp : -999.0f;
+  if (isfinite(objTemp) && objTemp >= -20.0f && objTemp <= 100.0f) {
     mlx90614Present = true;
-    rawObjectTemperature = objTemp;
-    float calibrated = objTemp + TEMP_CALIBRATION_OFFSET;
-    if (temperatureSampleCount == 0) liveTemperature = calibrated;
-    else liveTemperature = 0.65f * liveTemperature + 0.35f * calibrated;
+    liveTemperature = objTemp; // The current, PEC-checked IR object measurement.
     if (temperatureSampleCount < 3) temperatureSampleCount++;
     temperatureValid = temperatureSampleCount >= 3;
-    lastValidTemperatureTime = millis();
-    if (isfinite(ambTemp) && ambTemp >= -20.0f && ambTemp <= 85.0f)
-      liveAmbientTemperature = ambTemp;
   } else {
-    if (millis() - lastValidTemperatureTime > TEMP_TIMEOUT_MS) {
-      temperatureValid = false;
-      temperatureSampleCount = 0;
-      mlx90614Present = false;
-    }
+    // Never keep reporting an older temperature after a failed I2C/PEC read.
+    temperatureValid = false;
+    temperatureSampleCount = 0;
+    liveTemperature = 0.0f;
+    mlx90614Present = false;
   }
 }
 
@@ -767,36 +704,36 @@ void readBattery() {
 void sendTelemetry() {
   if (!deviceConnected) return;
 
-#if TELEMETRY_USE_JSON
-  char jsonBuffer[512];
-  char hr[16], o2[16], temp[16], battery[8];
+  char jsonBuffer[640];
+  char hr[16], o2[16], temp[16], ambient[16], battery[8];
   if (heartRateValid && fingerDetected) snprintf(hr, sizeof(hr), "%.0f", liveHeartRate); else strcpy(hr, "null");
   if (spo2Valid && fingerDetected) snprintf(o2, sizeof(o2), "%.1f", liveSpo2); else strcpy(o2, "null");
   if (temperatureValid) snprintf(temp, sizeof(temp), "%.2f", liveTemperature); else strcpy(temp, "null");
+  if (liveAmbientTemperature > -100.0f) snprintf(ambient, sizeof(ambient), "%.2f", liveAmbientTemperature); else strcpy(ambient, "null");
   if (batteryPercentage >= 0) snprintf(battery, sizeof(battery), "%d", batteryPercentage); else strcpy(battery, "null");
 
 #if ENABLE_CALIBRATION_DEBUG
   int length = snprintf(jsonBuffer, sizeof(jsonBuffer),
-    "{\"deviceId\":\"%s\",\"heartRate\":%s,\"spo2\":%s,\"temperature\":%s,\"activity\":\"%s\","
+    "{\"protocol\":2,\"deviceId\":\"%s\",\"sensorModel\":\"MLX90614_IR_OBJECT\",\"heartRate\":%s,\"spo2\":%s,\"temperature\":%s,\"ambientTemp\":%s,\"activity\":\"%s\","
     "\"fingerDetected\":%s,\"heartRateValid\":%s,\"spo2Valid\":%s,\"temperatureValid\":%s,"
     "\"temperatureMeasuring\":%s,\"motionValid\":%s,\"poorSignal\":%s,\"fallDetected\":%s,\"battery\":%s,"
-    "\"debug\":{\"red\":%lu,\"ir\":%lu,\"q\":%.3f,\"ambient\":%.2f,\"object\":%.2f,\"offset\":%.2f,"
+    "\"debug\":{\"red\":%lu,\"ir\":%lu,\"q\":%.3f,\"ambient\":%.2f,\"object\":%.2f,"
     "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,\"am\":%.2f}}",
-    DEVICE_NAME, hr, o2, temp, activityStatus.c_str(),
+    DEVICE_NAME, hr, o2, temp, ambient, activityStatus.c_str(),
     fingerDetected ? "true" : "false", heartRateValid ? "true" : "false",
     spo2Valid ? "true" : "false", temperatureValid ? "true" : "false",
     temperatureSampleCount > 0 && !temperatureValid ? "true" : "false",
     motionValid ? "true" : "false", poorSignal ? "true" : "false",
     fallDetected ? "true" : "false", battery,
     (unsigned long)rawRed, (unsigned long)rawIR, ppgQuality,
-    liveAmbientTemperature, rawObjectTemperature, TEMP_CALIBRATION_OFFSET,
+    liveAmbientTemperature, rawObjectTemperature,
     accelX, accelY, accelZ, gyroX, gyroY, gyroZ, accelMagnitude);
 #else
   int length = snprintf(jsonBuffer, sizeof(jsonBuffer),
-    "{\"deviceId\":\"%s\",\"heartRate\":%s,\"spo2\":%s,\"temperature\":%s,\"activity\":\"%s\","
+    "{\"protocol\":2,\"deviceId\":\"%s\",\"sensorModel\":\"MLX90614_IR_OBJECT\",\"heartRate\":%s,\"spo2\":%s,\"temperature\":%s,\"ambientTemp\":%s,\"activity\":\"%s\","
     "\"fingerDetected\":%s,\"heartRateValid\":%s,\"spo2Valid\":%s,\"temperatureValid\":%s,"
     "\"temperatureMeasuring\":%s,\"motionValid\":%s,\"poorSignal\":%s,\"fallDetected\":%s,\"battery\":%s}"
-    , DEVICE_NAME, hr, o2, temp, activityStatus.c_str(),
+    , DEVICE_NAME, hr, o2, temp, ambient, activityStatus.c_str(),
     fingerDetected ? "true" : "false", heartRateValid ? "true" : "false",
     spo2Valid ? "true" : "false", temperatureValid ? "true" : "false",
     temperatureSampleCount > 0 && !temperatureValid ? "true" : "false",
@@ -812,45 +749,9 @@ void sendTelemetry() {
     int chunk = min(20, length - offset);
     pSensorCharacteristic->setValue((uint8_t*)jsonBuffer + offset, chunk);
     pSensorCharacteristic->notify();
-    delay(5);
+    delay(20); // Space notifications so a small phone BLE receive queue can keep up.
   }
 
-#else
-  DoodleDryBinaryPacket packet;
-  packet.heartRate = (uint8_t)constrain((int)liveHeartRate, 0, 255);
-  packet.spo2 = (uint8_t)constrain((int)liveSpo2, 0, 100);
-
-#if HAS_TEMPERATURE_SENSOR
-  if (temperatureValid && liveTemperature > 0.0f) {
-    uint16_t rawTemp = (uint16_t)(liveTemperature * 100.0f);
-    packet.temperature = (uint16_t)(((rawTemp >> 8) & 0x00FF) | ((rawTemp << 8) & 0xFF00));
-  } else {
-    packet.temperature = 0;
-  }
-#else
-  packet.temperature = 0; // null temperature scaled
-#endif
-
-  int16_t axScaled = (int16_t)(accelX * 100.0f);
-  packet.accelX = (int16_t)(((axScaled >> 8) & 0x00FF) | ((axScaled << 8) & 0xFF00));
-  int16_t ayScaled = (int16_t)(accelY * 100.0f);
-  packet.accelY = (int16_t)(((ayScaled >> 8) & 0x00FF) | ((ayScaled << 8) & 0xFF00));
-  int16_t azScaled = (int16_t)(accelZ * 100.0f);
-  packet.accelZ = (int16_t)(((azScaled >> 8) & 0x00FF) | ((azScaled << 8) & 0xFF00));
-
-  uint8_t activityCode = 0; // 0: sleeping, 1: awake, 2: active, 3: restless
-  if (activityStatus == "awake") activityCode = 1;
-  else if (activityStatus == "active") activityCode = 2;
-  else if (activityStatus == "restless") activityCode = 3;
-
-  packet.flags = (fallDetected ? 0x01 : 0x00) | ((activityCode & 0x07) << 1);
-  packet.battery = (uint8_t)constrain(batteryPercentage, 0, 100);
-
-  pSensorCharacteristic->setValue((uint8_t*)&packet, sizeof(packet));
-  pSensorCharacteristic->notify();
-
-  Serial.println("[BLE TX BINARY] >> 12 bytes notified.");
-#endif
 }
 
 // =========================================================================================
@@ -917,6 +818,12 @@ void loop() {
   // 4. Periodic Telemetry Streaming (1 Hz)
   if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryTime = now;
+    Serial.printf("[SENSORS] MAX30102=%s IR=%lu RED=%lu contact=%d signal=%d HR=%s SpO2=%s | MLX90614=%s object=%.2fC valid=%d\n",
+      max30102Present ? "present" : "missing", (unsigned long)rawIR,
+      (unsigned long)rawRed, fingerDetected, !poorSignal,
+      heartRateValid ? "valid" : "--", spo2Valid ? "valid" : "--",
+      mlx90614Present ? "present" : "missing", rawObjectTemperature,
+      temperatureValid);
     sendTelemetry();
   }
 

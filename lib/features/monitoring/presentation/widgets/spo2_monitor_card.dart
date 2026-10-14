@@ -50,16 +50,20 @@ class Spo2MonitorCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'SpO₂ OXYGEN',
+                        'SpO₂ ESTIMATE',
                         style: AppTextStyles.titleMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.5,
                         ),
                       ),
                       Text(
-                        isConnected ? 'Status: ${sensorData.spo2State.displayName}' : 'Device Disconnected',
+                        isConnected
+                            ? 'Status: ${sensorData.spo2State.displayName}'
+                            : 'Device Disconnected',
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: isConnected ? AppColors.success : AppColors.danger,
+                          color: isConnected
+                              ? AppColors.success
+                              : AppColors.danger,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -69,18 +73,24 @@ class Spo2MonitorCard extends StatelessWidget {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark ? AppColors.surfaceDark : AppColors.backgroundLight,
+                  color: isDark
+                      ? AppColors.surfaceDark
+                      : AppColors.backgroundLight,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                    color:
+                        isDark ? AppColors.borderDark : AppColors.borderLight,
                   ),
                 ),
                 child: Text(
                   sensorData.dataQuality.displayName,
                   style: AppTextStyles.label.copyWith(
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                     fontSize: 10,
                   ),
                 ),
@@ -105,7 +115,9 @@ class Spo2MonitorCard extends StatelessWidget {
               Text(
                 '%',
                 style: AppTextStyles.titleMedium.copyWith(
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -113,13 +125,24 @@ class Spo2MonitorCard extends StatelessWidget {
               Text(
                 'Updated: ${AppDateFormatter.formatRelativeTime(sensorData.timestamp)}',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                   fontSize: 11,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+          Text(
+            'Optical sensor estimate. Confirm health decisions with a validated medical device.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+          const SizedBox(height: 12),
           // Live Sparkline Chart
           Container(
             height: 85,

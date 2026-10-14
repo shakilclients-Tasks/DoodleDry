@@ -5,7 +5,6 @@ import 'package:doodledry/core/constants/app_text_styles.dart';
 import 'package:doodledry/features/device_connection/data/models/device_connection_state.dart';
 import 'package:doodledry/features/device_connection/data/models/discovered_device.dart';
 import 'package:doodledry/features/device_connection/presentation/providers/device_connection_provider.dart';
-import 'package:doodledry/features/settings/presentation/providers/settings_provider.dart';
 import 'package:doodledry/shared/widgets/custom_button.dart';
 import 'package:doodledry/shared/widgets/custom_card.dart';
 
@@ -23,10 +22,7 @@ class _DeviceConnectionScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final isSim = ref.read(settingsProvider).isSimulationMode;
-      if (!isSim) {
-        ref.read(deviceConnectionNotifierProvider.notifier).startScan();
-      }
+      ref.read(deviceConnectionNotifierProvider.notifier).startScan();
     });
   }
 
@@ -34,7 +30,6 @@ class _DeviceConnectionScreenState
   Widget build(BuildContext context) {
     final connectionState = ref.watch(deviceConnectionNotifierProvider);
     final discoveredDevices = ref.watch(discoveredDevicesProvider).value ?? [];
-    final settings = ref.watch(settingsProvider);
     final bleError = ref.watch(bleDeviceRepositoryProvider).lastBleError;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -45,25 +40,20 @@ class _DeviceConnectionScreenState
           style: AppTextStyles.titleLarge.copyWith(fontWeight: FontWeight.w700),
         ),
         actions: [
-          if (!settings.isSimulationMode)
-            IconButton(
-              icon: Icon(
-                connectionState == DeviceConnectionState.scanning
-                    ? Icons.stop_rounded
-                    : Icons.refresh_rounded,
-              ),
-              onPressed: () {
-                if (connectionState == DeviceConnectionState.scanning) {
-                  ref
-                      .read(deviceConnectionNotifierProvider.notifier)
-                      .stopScan();
-                } else {
-                  ref
-                      .read(deviceConnectionNotifierProvider.notifier)
-                      .startScan();
-                }
-              },
+          IconButton(
+            icon: Icon(
+              connectionState == DeviceConnectionState.scanning
+                  ? Icons.stop_rounded
+                  : Icons.refresh_rounded,
             ),
+            onPressed: () {
+              if (connectionState == DeviceConnectionState.scanning) {
+                ref.read(deviceConnectionNotifierProvider.notifier).stopScan();
+              } else {
+                ref.read(deviceConnectionNotifierProvider.notifier).startScan();
+              }
+            },
+          ),
         ],
       ),
       body: SafeArea(
@@ -125,15 +115,13 @@ class _DeviceConnectionScreenState
                       ],
                     ),
                     const SizedBox(height: 16),
-                    if (!settings.isSimulationMode &&
-                        (connectionState ==
-                                DeviceConnectionState.connectionFailed ||
-                            connectionState ==
-                                DeviceConnectionState.reconnecting ||
-                            connectionState ==
-                                DeviceConnectionState.permissionDenied ||
-                            connectionState ==
-                                DeviceConnectionState.bluetoothDisabled)) ...[
+                    if ((connectionState ==
+                            DeviceConnectionState.connectionFailed ||
+                        connectionState == DeviceConnectionState.reconnecting ||
+                        connectionState ==
+                            DeviceConnectionState.permissionDenied ||
+                        connectionState ==
+                            DeviceConnectionState.bluetoothDisabled)) ...[
                       Text(
                         connectionState ==
                                 DeviceConnectionState.bluetoothDisabled
@@ -162,7 +150,7 @@ class _DeviceConnectionScreenState
                               .disconnect();
                         },
                       )
-                    else if (!settings.isSimulationMode)
+                    else
                       CustomButton(
                         text: connectionState == DeviceConnectionState.scanning
                             ? "Scanning..."
@@ -181,60 +169,6 @@ class _DeviceConnectionScreenState
                 ),
               ),
               const SizedBox(height: 24),
-
-              // Simulation Notice
-              if (settings.isSimulationMode) ...[
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.simulationBadgeBg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: AppColors.simulationBadge.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline,
-                              color: AppColors.simulationBadge, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            "Simulation Mode is Enabled",
-                            style: AppTextStyles.titleSmall.copyWith(
-                              color: AppColors.simulationBadge,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "The app is currently streaming simulated virtual hardware data. To connect to physical hardware, disable Simulation Mode in Settings.",
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondaryLight,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      CustomButton(
-                        text: "Switch to Real Hardware BLE",
-                        variant: CustomButtonVariant.primary,
-                        height: 40,
-                        onPressed: () {
-                          ref
-                              .read(settingsProvider.notifier)
-                              .toggleSimulationMode(false);
-                          ref
-                              .read(deviceConnectionNotifierProvider.notifier)
-                              .startScan();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
 
               // Discovered Hardware Devices Section
               Text(

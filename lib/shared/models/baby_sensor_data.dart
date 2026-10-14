@@ -10,8 +10,10 @@ class BabySensorData {
   // Physiological vitals
   final double? heartRate;
   final double? spo2;
-  final double? temperature; // Stored natively in Celsius (Infant Body / Object Temp)
-  final double? ambientTemperature; // Stored in Celsius (Nursery Room / Ambient Temp from MLX90614)
+  final double?
+      temperature; // Measured IR object/surface temperature in Celsius, not core body temperature.
+  final double?
+      ambientTemperature; // MLX90614 sensor ambient temperature in Celsius.
   final String? sensorModel; // e.g. 'MLX90614'
   final bool? fingerDetected;
   final bool? heartRateValid;
@@ -28,7 +30,8 @@ class BabySensorData {
 
   // Safety & Activity
   final bool? fallDetected;
-  final String? activityStatus; // 'sleeping', 'awake', 'active', 'restless', 'unknown'
+  final String?
+      activityStatus; // 'sleeping', 'awake', 'active', 'restless', 'unknown'
 
   // Device telemetry
   final DateTime timestamp;
@@ -95,13 +98,15 @@ class BabySensorData {
   }
 
   /// Create an instance from a JSON packet received over BLE or Cloud
-  factory BabySensorData.fromJson(Map<String, dynamic> json, {bool isSimulation = false}) {
+  factory BabySensorData.fromJson(Map<String, dynamic> json,
+      {bool isSimulation = false}) {
     // The app's monotonic receive time controls freshness; a device clock may be unset.
     final parsedTimestamp = DateTime.now();
 
     double? parseDouble(dynamic val) {
       if (val == null) return null;
-      final number = val is num ? val.toDouble() : double.tryParse(val.toString());
+      final number =
+          val is num ? val.toDouble() : double.tryParse(val.toString());
       return number != null && number.isFinite ? number : null;
     }
 
@@ -120,29 +125,47 @@ class BabySensorData {
     final hr = parseDouble(json['heartRate'] ?? json['hr']);
     final o2 = parseDouble(json['spo2'] ?? json['oxygen']);
     final temp = parseDouble(json['temperature'] ?? json['temp']);
-    final ambTemp = parseDouble(json['ambientTemp'] ?? json['ambientTemperature'] ?? json['roomTemp']);
-    final sModel = json['sensorModel']?.toString() ?? (temp != null ? 'MLX90614' : null);
+    final ambTemp = parseDouble(
+        json['ambientTemp'] ?? json['ambientTemperature'] ?? json['roomTemp']);
+    final sModel =
+        json['sensorModel']?.toString() ?? (temp != null ? 'MLX90614' : null);
     final ax = parseDouble(json['accelerationX'] ?? json['ax']);
     final ay = parseDouble(json['accelerationY'] ?? json['ay']);
     final az = parseDouble(json['accelerationZ'] ?? json['az']);
     final fall = parseBool(json['fallDetected'] ?? json['fall']);
-    final act = (json['activityStatus'] ?? json['activity'])?.toString().toLowerCase() ?? 'unknown';
+    final act = (json['activityStatus'] ?? json['activity'])
+            ?.toString()
+            .toLowerCase() ??
+        'unknown';
     final rawBattery = parseInt(json['batteryPercentage'] ?? json['battery']);
-    final batt = rawBattery != null && rawBattery >= 0 && rawBattery <= 100 ? rawBattery : null;
+    final batt = rawBattery != null && rawBattery >= 0 && rawBattery <= 100
+        ? rawBattery
+        : null;
     final devId = json['deviceId']?.toString() ?? '--';
     final bId = json['babyId']?.toString() ?? 'baby_default';
 
-    final finger = json['fingerDetected'] == null ? null : parseBool(json['fingerDetected']);
-    final hrValid = json['heartRateValid'] == null ? null : parseBool(json['heartRateValid']);
-    final o2Valid = json['spo2Valid'] == null ? null : parseBool(json['spo2Valid']);
-    final tempValid = json['temperatureValid'] == null ? null : parseBool(json['temperatureValid']);
+    final finger = json['fingerDetected'] == null
+        ? null
+        : parseBool(json['fingerDetected']);
+    final hrValid = json['heartRateValid'] == null
+        ? null
+        : parseBool(json['heartRateValid']);
+    final o2Valid =
+        json['spo2Valid'] == null ? null : parseBool(json['spo2Valid']);
+    final tempValid = json['temperatureValid'] == null
+        ? null
+        : parseBool(json['temperatureValid']);
     final tempMeasuring = parseBool(json['temperatureMeasuring']);
-    final motionValid = json['motionValid'] == null ? null : parseBool(json['motionValid']);
+    final motionValid =
+        json['motionValid'] == null ? null : parseBool(json['motionValid']);
     final poor = parseBool(json['poorSignal']);
     final hasHr = hr != null && hr > 0 && finger != false && hrValid != false;
     final hasO2 = o2 != null && o2 > 0 && finger != false && o2Valid != false;
     final hasTemp = temp != null && tempValid != false;
-    final hasMotion = motionValid != false && (const {'still', 'moving', 'active', 'sleeping', 'awake', 'restless'}.contains(act) || (ax != null && ay != null && az != null));
+    final hasMotion = motionValid != false &&
+        (const {'still', 'moving', 'active', 'sleeping', 'awake', 'restless'}
+                .contains(act) ||
+            (ax != null && ay != null && az != null));
 
     return BabySensorData(
       deviceId: devId,
@@ -158,7 +181,9 @@ class BabySensorData {
       temperatureValid: tempValid,
       motionValid: motionValid,
       poorSignal: poor,
-      diagnostics: json['debug'] is Map<String, dynamic> ? json['debug'] as Map<String, dynamic> : null,
+      diagnostics: json['debug'] is Map<String, dynamic>
+          ? json['debug'] as Map<String, dynamic>
+          : null,
       accelerationX: ax,
       accelerationY: ay,
       accelerationZ: az,
@@ -169,9 +194,27 @@ class BabySensorData {
       isDeviceConnected: true,
       isSensorDataValid: hasHr || hasO2 || hasTemp || hasMotion,
       isSimulation: isSimulation,
-      heartRateState: hasHr ? SensorState.active : finger != true ? SensorState.noData : poor ? SensorState.poorSignal : SensorState.measuring,
-      spo2State: hasO2 ? SensorState.active : finger != true ? SensorState.noData : poor ? SensorState.poorSignal : SensorState.measuring,
-      temperatureState: hasTemp ? SensorState.active : tempMeasuring ? SensorState.measuring : tempValid == false ? SensorState.error : SensorState.noData,
+      heartRateState: hasHr
+          ? SensorState.active
+          : finger != true
+              ? SensorState.noData
+              : poor
+                  ? SensorState.poorSignal
+                  : SensorState.measuring,
+      spo2State: hasO2
+          ? SensorState.active
+          : finger != true
+              ? SensorState.noData
+              : poor
+                  ? SensorState.poorSignal
+                  : SensorState.measuring,
+      temperatureState: hasTemp
+          ? SensorState.active
+          : tempMeasuring
+              ? SensorState.measuring
+              : tempValid == false
+                  ? SensorState.error
+                  : SensorState.noData,
       motionState: hasMotion ? SensorState.active : SensorState.noData,
       dataQuality: SensorDataQuality.valid,
     );
@@ -245,9 +288,12 @@ class BabySensorData {
     return BabySensorData(
       deviceId: deviceId ?? this.deviceId,
       babyId: babyId ?? this.babyId,
-      heartRate: identical(heartRate, _unset) ? this.heartRate : heartRate as double?,
+      heartRate:
+          identical(heartRate, _unset) ? this.heartRate : heartRate as double?,
       spo2: identical(spo2, _unset) ? this.spo2 : spo2 as double?,
-      temperature: identical(temperature, _unset) ? this.temperature : temperature as double?,
+      temperature: identical(temperature, _unset)
+          ? this.temperature
+          : temperature as double?,
       ambientTemperature: ambientTemperature ?? this.ambientTemperature,
       sensorModel: sensorModel ?? this.sensorModel,
       fingerDetected: fingerDetected ?? this.fingerDetected,

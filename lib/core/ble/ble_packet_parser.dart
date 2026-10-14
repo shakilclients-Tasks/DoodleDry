@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
+
 import '../../shared/models/baby_sensor_data.dart';
 import '../../shared/models/sensor_status.dart';
 
-/// Result returned from BLE packet parsing
 class BleParseResult {
   final BabySensorData? data;
   final bool isSuccess;
@@ -17,162 +16,116 @@ class BleParseResult {
     this.quality = SensorDataQuality.valid,
   });
 
-  factory BleParseResult.success(BabySensorData data) {
-    return BleParseResult(
-      data: data,
-      isSuccess: true,
-      quality: data.dataQuality,
-    );
-  }
+  factory BleParseResult.success(BabySensorData data) =>
+      BleParseResult(data: data, isSuccess: true, quality: data.dataQuality);
 
-  factory BleParseResult.failure(String message, {SensorDataQuality quality = SensorDataQuality.invalid}) {
-    return BleParseResult(
-      data: null,
-      isSuccess: false,
-      errorMessage: message,
-      quality: quality,
-    );
-  }
+  factory BleParseResult.failure(String message,
+          {SensorDataQuality quality = SensorDataQuality.invalid}) =>
+      BleParseResult(isSuccess: false, errorMessage: message, quality: quality);
 }
 
-/// Robust parser for incoming BLE characteristic value bytes
+/// Accepts only the versioned JSON sent by the physical ESP32 firmware.
+/// Arbitrary 12-byte fragments must never be interpreted as vital readings.
 class BlePacketParser {
+  static const int protocolVersion = 2;
+  static const int _maximumPacketBytes = 1024;
+  static final List<int> _framePrefix = utf8.encode('{"protocol":');
   final List<int> _packetBuffer = [];
-  DateTime? _lastTimestamp;
 
-  /// Resets the internal accumulator buffer
-  void resetBuffer() {
-    _packetBuffer.clear();
-    _lastTimestamp = null;
-  }
+  void resetBuffer() => _packetBuffer.clear();
 
-  /// Parses a raw list of bytes from BLE notification
-  BleParseResult parseBytes(List<int> rawBytes, {String defaultDeviceId = 'DOODLEDRY-001', String babyId = 'baby_default'}) {
+  BleParseResult parseBytes(List<int> rawBytes,
+      {String defaultDeviceId = 'DOODLEDRY-001',
+      String babyId = 'baby_default'}) {
     if (rawBytes.isEmpty) {
-      return BleParseResult.failure("Empty byte payload received", quality: SensorDataQuality.missing);
+      return BleParseResult.failure('Empty BLE notification',
+          quality: SensorDataQuality.missing);
     }
-
+    if (_packetBuffer.isNotEmpty && _startsWith(rawBytes, _framePrefix)) {
+      // A new frame started after a dropped chunk. Discard the incomplete one.
+      _packetBuffer.clear();
+    }
+    if (_packetBuffer.isEmpty && rawBytes.first != 0x7b) {
+      return BleParseResult.failure('Unexpected BLE frame; JSON required');
+    }
+    _packetBuffer.addAll(rawBytes);
+    if (_packetBuffer.length > _maximumPacketBytes) {
+      _packetBuffer.clear();
+      return BleParseResult.failure('BLE packet exceeded maximum length');
+    }
     try {
-      // Legacy binary packets are exactly 12 bytes. Never guess binary from a
-      // fragmented JSON chunk, which could turn arbitrary bytes into vitals.
-      if (_packetBuffer.isEmpty && rawBytes.length == 12 && rawBytes.first != 123) {
-        return _parseBinaryPacket(rawBytes, defaultDeviceId: defaultDeviceId, babyId: babyId);
+      final packet = utf8.decode(_packetBuffer).trim();
+      if (!packet.endsWith('}')) {
+        return BleParseResult.failure('Incomplete JSON frame',
+            quality: SensorDataQuality.missing);
       }
-      if (_packetBuffer.isNotEmpty && rawBytes.length >= 11 &&
-          utf8.decode(rawBytes.take(11).toList(), allowMalformed: true) == '{"deviceId"') {
-        _packetBuffer.clear();
-      }
-      _packetBuffer.addAll(rawBytes);
-      if (_packetBuffer.length > 1024) {
-        _packetBuffer.clear();
-        return BleParseResult.failure('Packet buffer overflow', quality: SensorDataQuality.invalid);
-      }
-      final packet = utf8.decode(_packetBuffer, allowMalformed: false).trim();
-      if (packet.startsWith('{') && packet.endsWith('}')) {
-        _packetBuffer.clear();
-        return parseJsonString(packet, defaultDeviceId: defaultDeviceId, babyId: babyId);
-      }
-      return BleParseResult.failure('Incomplete packet', quality: SensorDataQuality.missing);
+      _packetBuffer.clear();
+      return parseJsonString(packet, babyId: babyId);
     } on FormatException {
-      // A UTF-8 sequence may be split between notifications. Bound above still applies.
-      return BleParseResult.failure('Incomplete UTF-8 packet', quality: SensorDataQuality.missing);
-    } catch (e, stack) {
-      developer.log("BLE Packet parse exception", error: e, stackTrace: stack, name: "BlePacketParser");
-      return BleParseResult.failure("Decoding exception: $e", quality: SensorDataQuality.sensorError);
+      return BleParseResult.failure('Incomplete or invalid UTF-8 frame',
+          quality: SensorDataQuality.missing);
     }
   }
 
-  /// Parses a JSON string representation into [BabySensorData]
-  BleParseResult parseJsonString(String jsonStr, {String defaultDeviceId = 'DOODLEDRY-001', String babyId = 'baby_default'}) {
+  BleParseResult parseJsonString(String jsonStr,
+      {String defaultDeviceId = 'DOODLEDRY-001',
+      String babyId = 'baby_default'}) {
     try {
-      final dynamic decoded = jsonDecode(jsonStr);
+      final decoded = jsonDecode(jsonStr);
       if (decoded is! Map<String, dynamic>) {
-        return BleParseResult.failure("Root JSON is not a key-value object", quality: SensorDataQuality.invalid);
+        return BleParseResult.failure('BLE packet is not a JSON object');
       }
-
+      if (decoded['protocol'] != protocolVersion ||
+          decoded['deviceId'] is! String ||
+          !(decoded['deviceId'] as String).startsWith('DOODLEDRY') ||
+          decoded['sensorModel'] != 'MLX90614_IR_OBJECT') {
+        return BleParseResult.failure('Unsupported ESP32 telemetry protocol');
+      }
+      for (final key in [
+        'fingerDetected',
+        'heartRateValid',
+        'spo2Valid',
+        'temperatureValid',
+        'motionValid',
+        'poorSignal',
+      ]) {
+        if (decoded[key] is! bool) {
+          return BleParseResult.failure('Missing hardware validity flag: $key');
+        }
+      }
+      for (final pair in [
+        ('heartRate', 'heartRateValid'),
+        ('spo2', 'spo2Valid'),
+        ('temperature', 'temperatureValid'),
+      ]) {
+        final reading = decoded[pair.$1];
+        final valid = decoded[pair.$2] as bool;
+        if (valid != (reading is num && reading.isFinite)) {
+          return BleParseResult.failure(
+              'Inconsistent hardware reading: ${pair.$1}');
+        }
+      }
+      if (decoded['fingerDetected'] == false &&
+          (decoded['heartRateValid'] == true || decoded['spo2Valid'] == true)) {
+        return BleParseResult.failure('Optical reading without sensor contact');
+      }
       final data = BabySensorData.fromJson({
         ...decoded,
-        'deviceId': decoded['deviceId'] ?? defaultDeviceId,
-        'babyId': decoded['babyId'] ?? babyId,
+        'babyId': babyId,
       });
-
-      // Validate timestamp monotonicity / duplicate checks
-      if (_lastTimestamp != null && data.timestamp.isBefore(_lastTimestamp!)) {
-        developer.log("Warning: Out-of-order timestamp detected: ${data.timestamp} vs previous $_lastTimestamp", name: "BlePacketParser");
-      }
-      _lastTimestamp = data.timestamp;
-
       return BleParseResult.success(data);
-    } on FormatException catch (fe) {
-      developer.log("Invalid JSON format: ${fe.message}", name: "BlePacketParser");
-      return BleParseResult.failure("Invalid JSON syntax: ${fe.message}", quality: SensorDataQuality.invalid);
+    } on FormatException catch (e) {
+      return BleParseResult.failure('Invalid JSON: ${e.message}');
     } catch (e) {
-      return BleParseResult.failure("JSON processing error: $e", quality: SensorDataQuality.invalid);
+      return BleParseResult.failure('Invalid BLE packet: $e');
     }
   }
 
-  /// Binary packet parser for raw microcontroller telemetry
-  BleParseResult _parseBinaryPacket(List<int> bytes, {required String defaultDeviceId, required String babyId}) {
-    try {
-      // Byte structure:
-      // [0]: Heart rate BPM (0..255)
-      // [1]: SpO2 % (0..100)
-      // [2..3]: Temperature in Celsius * 100 (Uint16)
-      // [4..5]: Accel X in m/s^2 * 100 (Int16)
-      // [6..7]: Accel Y in m/s^2 * 100 (Int16)
-      // [8..9]: Accel Z in m/s^2 * 100 (Int16)
-      // [10]: Flags: bit 0: Fall detected, bits 1..3: Activity (0: sleep, 1: awake, 2: active, 3: restless)
-      // [11]: Battery % (0..100)
-
-      final hr = bytes[0] > 0 ? bytes[0].toDouble() : null;
-      final spo2 = (bytes[1] > 0 && bytes[1] <= 100) ? bytes[1].toDouble() : null;
-      
-      int rawTemp = (bytes[2] << 8) | bytes[3];
-      final temp = rawTemp > 0 ? (rawTemp / 100.0) : null;
-
-      int rawAx = (bytes[4] << 8) | bytes[5];
-      if (rawAx > 32767) rawAx -= 65536;
-      final ax = rawAx / 100.0;
-
-      int rawAy = (bytes[6] << 8) | bytes[7];
-      if (rawAy > 32767) rawAy -= 65536;
-      final ay = rawAy / 100.0;
-
-      int rawAz = (bytes[8] << 8) | bytes[9];
-      if (rawAz > 32767) rawAz -= 65536;
-      final az = rawAz / 100.0;
-
-      final flags = bytes[10];
-      final fallDetected = (flags & 0x01) != 0;
-      final activityCode = (flags >> 1) & 0x07;
-      String activity = 'sleeping';
-      if (activityCode == 1) activity = 'awake';
-      if (activityCode == 2) activity = 'active';
-      if (activityCode == 3) activity = 'restless';
-
-      final battery = bytes[11] <= 100 ? bytes[11] : null;
-
-      final data = BabySensorData(
-        deviceId: defaultDeviceId,
-        babyId: babyId,
-        heartRate: hr,
-        spo2: spo2,
-        temperature: temp,
-        accelerationX: ax,
-        accelerationY: ay,
-        accelerationZ: az,
-        fallDetected: fallDetected,
-        activityStatus: activity,
-        timestamp: DateTime.now(),
-        batteryPercentage: battery,
-        isDeviceConnected: true,
-        isSensorDataValid: hr != null || spo2 != null || temp != null,
-        dataQuality: SensorDataQuality.valid,
-      );
-
-      return BleParseResult.success(data);
-    } catch (e) {
-      return BleParseResult.failure("Failed to decode binary packet: $e", quality: SensorDataQuality.sensorError);
+  static bool _startsWith(List<int> bytes, List<int> prefix) {
+    if (bytes.length < prefix.length) return false;
+    for (var i = 0; i < prefix.length; i++) {
+      if (bytes[i] != prefix[i]) return false;
     }
+    return true;
   }
 }

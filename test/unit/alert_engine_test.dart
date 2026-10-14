@@ -21,7 +21,8 @@ void main() {
       alertRepo = AlertRepository();
     });
 
-    test('should trigger critical alert immediately upon fall event detection', () {
+    test('should trigger critical alert immediately upon fall event detection',
+        () {
       final fallData = BabySensorData(
         deviceId: 'DOODLEDRY-001',
         babyId: 'baby_001',
@@ -35,8 +36,10 @@ void main() {
 
       final triggered = alertRepo.evaluateVitals(fallData, thresholds);
 
-      expect(triggered.any((a) => a.alertType == AlertType.fallDetected), isTrue);
-      final fallAlert = triggered.firstWhere((a) => a.alertType == AlertType.fallDetected);
+      expect(
+          triggered.any((a) => a.alertType == AlertType.fallDetected), isTrue);
+      final fallAlert =
+          triggered.firstWhere((a) => a.alertType == AlertType.fallDetected);
       expect(fallAlert.severity, equals(AlertSeverity.critical));
     });
 
@@ -53,7 +56,8 @@ void main() {
 
       final triggered = alertRepo.evaluateVitals(highHrData, thresholds);
 
-      expect(triggered.any((a) => a.alertType == AlertType.heartRateHigh), isTrue);
+      expect(
+          triggered.any((a) => a.alertType == AlertType.heartRateHigh), isTrue);
     });
 
     test('should trigger low oxygen warning when SpO2 is below threshold', () {
@@ -87,6 +91,22 @@ void main() {
 
       final triggered = alertRepo.evaluateVitals(normalData, thresholds);
       expect(triggered.isEmpty, isTrue);
+    });
+
+    test('does not classify MLX90614 surface temperature as fever', () {
+      final objectTemperature = BabySensorData(
+        deviceId: 'DOODLEDRY-001',
+        babyId: 'baby_001',
+        sensorModel: 'MLX90614_IR_OBJECT',
+        temperature: 39.5,
+        temperatureValid: true,
+        timestamp: DateTime.now(),
+        isDeviceConnected: true,
+      );
+
+      final triggered = alertRepo.evaluateVitals(objectTemperature, thresholds);
+      expect(triggered.any((a) => a.alertType == AlertType.temperatureHigh),
+          isFalse);
     });
   });
 }

@@ -27,8 +27,21 @@ class TemperatureMonitorCard extends ConsumerWidget {
     final isConnected = sensorData.isDeviceConnected;
 
     final isFahrenheit = settings.isFahrenheit;
+    final plottedTemperatures = liveHistory
+        .map((entry) => entry.temperature)
+        .whereType<double>()
+        .map((value) => isFahrenheit ? value * 9 / 5 + 32 : value)
+        .toList();
+    final chartMin = plottedTemperatures.isEmpty
+        ? (isFahrenheit ? 30.0 : 0.0)
+        : plottedTemperatures.reduce((a, b) => a < b ? a : b) - 1;
+    final chartMax = plottedTemperatures.isEmpty
+        ? (isFahrenheit ? 32.0 : 2.0)
+        : plottedTemperatures.reduce((a, b) => a > b ? a : b) + 1;
     String displayTemp = '--';
-    if (isConnected && sensorData.temperatureState == SensorState.active && sensorData.temperature != null) {
+    if (isConnected &&
+        sensorData.temperatureState == SensorState.active &&
+        sensorData.temperature != null) {
       if (isFahrenheit) {
         displayTemp = sensorData.temperatureInFahrenheit!.toStringAsFixed(1);
       } else {
@@ -66,7 +79,7 @@ class TemperatureMonitorCard extends ConsumerWidget {
                       Row(
                         children: [
                           Text(
-                            'TEMPERATURE',
+                            'IR SURFACE TEMP',
                             style: AppTextStyles.titleMedium.copyWith(
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.5,
@@ -74,7 +87,8 @@ class TemperatureMonitorCard extends ConsumerWidget {
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: AppColors.temperature.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(6),
@@ -94,14 +108,17 @@ class TemperatureMonitorCard extends ConsumerWidget {
                         !isConnected
                             ? 'Device Disconnected'
                             : (sensorData.temperatureState == SensorState.active
-                                ? 'Status: Active (MLX90614 IR)'
-                                : 'Status: Standby • Awaiting Reading'),
+                                ? 'MLX90614 object reading • not core body temp'
+                                : 'Awaiting a valid MLX90614 reading'),
                         style: AppTextStyles.bodySmall.copyWith(
                           color: !isConnected
                               ? AppColors.danger
-                              : (sensorData.temperatureState == SensorState.active
+                              : (sensorData.temperatureState ==
+                                      SensorState.active
                                   ? AppColors.success
-                                  : (isDark ? AppColors.textMutedDark : AppColors.textMutedLight)),
+                                  : (isDark
+                                      ? AppColors.textMutedDark
+                                      : AppColors.textMutedLight)),
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -117,11 +134,13 @@ class TemperatureMonitorCard extends ConsumerWidget {
                 },
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.primaryContainer.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                    border:
+                        Border.all(color: AppColors.primary.withOpacity(0.3)),
                   ),
                   child: Text(
                     isFahrenheit ? 'Switch to °C' : 'Switch to °F',
@@ -151,7 +170,9 @@ class TemperatureMonitorCard extends ConsumerWidget {
               Text(
                 isFahrenheit ? '°F' : '°C',
                 style: AppTextStyles.titleMedium.copyWith(
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -159,28 +180,36 @@ class TemperatureMonitorCard extends ConsumerWidget {
               Text(
                 'Updated: ${AppDateFormatter.formatRelativeTime(sensorData.timestamp)}',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                   fontSize: 11,
                 ),
               ),
             ],
           ),
-          if (isConnected && sensorData.temperatureState == SensorState.active && sensorData.ambientTemperature != null) ...[
+          if (isConnected &&
+              sensorData.temperatureState == SensorState.active &&
+              sensorData.ambientTemperature != null) ...[
             const SizedBox(height: 6),
             Row(
               children: [
                 Icon(
                   Icons.home_outlined,
                   size: 14,
-                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                  color: isDark
+                      ? AppColors.textMutedDark
+                      : AppColors.textMutedLight,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   isFahrenheit
-                      ? 'Nursery Room: ${sensorData.ambientTemperatureInFahrenheit!.toStringAsFixed(1)} °F'
-                      : 'Nursery Room: ${sensorData.ambientTemperature!.toStringAsFixed(1)} °C',
+                      ? 'Sensor Ambient: ${sensorData.ambientTemperatureInFahrenheit!.toStringAsFixed(1)} °F'
+                      : 'Sensor Ambient: ${sensorData.ambientTemperature!.toStringAsFixed(1)} °C',
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                    color: isDark
+                        ? AppColors.textMutedDark
+                        : AppColors.textMutedLight,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                   ),
@@ -195,11 +224,15 @@ class TemperatureMonitorCard extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 8),
             child: LiveVitalSparkline(
               points: liveHistory,
-              valueSelector: (e) => e.temperature == null ? null : isFahrenheit ? (e.temperature! * 9 / 5 + 32) : e.temperature,
+              valueSelector: (e) => e.temperature == null
+                  ? null
+                  : isFahrenheit
+                      ? (e.temperature! * 9 / 5 + 32)
+                      : e.temperature,
               lineColor: AppColors.temperature,
               fillColor: AppColors.temperature,
-              minY: isFahrenheit ? 90.0 : 34.0,
-              maxY: isFahrenheit ? 104.0 : 40.0,
+              minY: chartMin,
+              maxY: chartMax,
             ),
           ),
         ],

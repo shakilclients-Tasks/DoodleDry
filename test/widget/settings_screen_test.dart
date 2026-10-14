@@ -7,7 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('SettingsScreen displays preference switches and hardware links', (tester) async {
+  testWidgets('SettingsScreen displays preference switches and hardware links',
+      (tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final localStorage = LocalStorageService(prefs);
@@ -30,6 +31,7 @@ void main() {
     expect(find.text('Notifications & Alerts'), findsOneWidget);
     expect(find.text('Cloud Database Sync'), findsOneWidget);
     expect(find.text('Monitoring Thresholds'), findsOneWidget);
-    expect(find.text('Hardware Simulation Mode'), findsOneWidget);
+    expect(find.text('Hardware Simulation Mode'), findsNothing);
+    expect(find.text('Connected Wearable Device'), findsOneWidget);
   });
 }

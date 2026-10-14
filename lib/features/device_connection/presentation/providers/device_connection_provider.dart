@@ -6,7 +6,6 @@ import '../../../../shared/models/sensor_status.dart';
 import '../../../alerts/presentation/providers/alert_provider.dart';
 import '../../../history/presentation/providers/history_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
-import '../../../simulation/data/simulation_engine.dart';
 import '../../data/models/device_connection_state.dart';
 import '../../data/models/discovered_device.dart';
 import '../../data/repositories/ble_device_repository.dart';
@@ -15,13 +14,6 @@ final bleDeviceRepositoryProvider = Provider<BleDeviceRepository>((ref) {
   final repo = BleDeviceRepository();
   ref.onDispose(() => repo.dispose());
   return repo;
-});
-
-final simulationEngineProvider = Provider<SimulationEngine>((ref) {
-  final engine = SimulationEngine();
-  engine.start();
-  ref.onDispose(() => engine.dispose());
-  return engine;
 });
 
 /// Live Stream of Discovered BLE Peripherals
@@ -43,26 +35,9 @@ class DeviceConnectionNotifier extends StateNotifier<DeviceConnectionState> {
   void _init() {
     final bleRepo = _ref.read(bleDeviceRepositoryProvider);
     _bleSub = bleRepo.connectionStateStream.listen((bleState) {
-      if (!_ref.read(settingsProvider).isSimulationMode) {
-        state = bleState;
-      }
+      state = bleState;
     });
-    final isSim = _ref.read(settingsProvider).isSimulationMode;
-    if (isSim) {
-      state = DeviceConnectionState.receivingData;
-    } else {
-      state = bleRepo.currentState;
-    }
-
-    _ref.listen(settingsProvider.select((s) => s.isSimulationMode),
-        (prev, isSim) {
-      if (isSim) {
-        state = DeviceConnectionState.receivingData;
-      } else {
-        final bleRepo = _ref.read(bleDeviceRepositoryProvider);
-        state = bleRepo.currentState;
-      }
-    });
+    state = bleRepo.currentState;
   }
 
   Future<void> startScan() async {
@@ -77,30 +52,19 @@ class DeviceConnectionNotifier extends StateNotifier<DeviceConnectionState> {
 
   Future<bool> connect(String deviceId) async {
     final bleRepo = _ref.read(bleDeviceRepositoryProvider);
-    final connected = await bleRepo.connectToDevice(deviceId);
-    if (connected) {
-      await _ref.read(settingsProvider.notifier).toggleSimulationMode(false);
-    }
-    return connected;
+    return bleRepo.connectToDevice(deviceId);
   }
 
   Future<void> disconnect() async {
-    final isSim = _ref.read(settingsProvider).isSimulationMode;
-    if (isSim) {
-      _ref.read(simulationEngineProvider).toggleConnection(false);
-      state = DeviceConnectionState.disconnected;
-    } else {
-      final bleRepo = _ref.read(bleDeviceRepositoryProvider);
-      await bleRepo.disconnect();
-      state = DeviceConnectionState.disconnected;
-    }
+    await _ref.read(bleDeviceRepositoryProvider).disconnect();
+    state = DeviceConnectionState.disconnected;
   }
 
   Future<void> reconnect() async {
-    final isSim = _ref.read(settingsProvider).isSimulationMode;
-    if (isSim) {
-      _ref.read(simulationEngineProvider).toggleConnection(true);
-      state = DeviceConnectionState.receivingData;
+    final bleRepo = _ref.read(bleDeviceRepositoryProvider);
+    final deviceId = bleRepo.connectedDeviceId;
+    if (deviceId != null) {
+      await bleRepo.connectToDevice(deviceId);
     }
   }
 
@@ -117,19 +81,13 @@ final deviceConnectionNotifierProvider =
   return DeviceConnectionNotifier(ref);
 });
 
-/// Unified Live Sensor Data Stream Provider (Active routing between Hardware BLE and Simulator)
+/// Live readings can only come from the physical BLE wearable.
 final activeSensorDataProvider = StreamProvider<BabySensorData>((ref) {
-  final isSim = ref.watch(settingsProvider.select((s) => s.isSimulationMode));
   final alertRepo = ref.watch(alertRepositoryProvider);
   final historyRepo = ref.watch(historyRepositoryProvider);
   final thresholds = ref.watch(settingsProvider.select((s) => s.thresholds));
 
-  Stream<BabySensorData> sourceStream;
-  if (isSim) {
-    sourceStream = ref.watch(simulationEngineProvider).sensorDataStream;
-  } else {
-    sourceStream = ref.watch(bleDeviceRepositoryProvider).sensorDataStream;
-  }
+  final sourceStream = ref.watch(bleDeviceRepositoryProvider).sensorDataStream;
 
   final controller = StreamController<BabySensorData>();
   BabySensorData? latest;

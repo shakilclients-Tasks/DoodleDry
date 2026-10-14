@@ -23,6 +23,17 @@ class HistoryScreen extends ConsumerWidget {
     final records = historyRepo.getHistory(selectedTimeframe);
     final averages = historyRepo.getAverages(selectedTimeframe);
     final distribution = historyRepo.getActivityDistribution(selectedTimeframe);
+    final plottedTemperatures = records
+        .map((entry) => entry.temperature)
+        .whereType<double>()
+        .map((value) => settings.isFahrenheit ? value * 9 / 5 + 32 : value)
+        .toList();
+    final temperatureChartMin = plottedTemperatures.isEmpty
+        ? (settings.isFahrenheit ? 30.0 : 0.0)
+        : plottedTemperatures.reduce((a, b) => a < b ? a : b) - 1;
+    final temperatureChartMax = plottedTemperatures.isEmpty
+        ? (settings.isFahrenheit ? 32.0 : 2.0)
+        : plottedTemperatures.reduce((a, b) => a > b ? a : b) + 1;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,14 +53,18 @@ class HistoryScreen extends ConsumerWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isDark ? AppColors.surfaceDark : const Color(0xFFF1F5F9),
+                  color:
+                      isDark ? AppColors.surfaceDark : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
                   children: [
-                    _buildTimeframeTab(ref, HistoryTimeframe.day, selectedTimeframe),
-                    _buildTimeframeTab(ref, HistoryTimeframe.week, selectedTimeframe),
-                    _buildTimeframeTab(ref, HistoryTimeframe.month, selectedTimeframe),
+                    _buildTimeframeTab(
+                        ref, HistoryTimeframe.day, selectedTimeframe),
+                    _buildTimeframeTab(
+                        ref, HistoryTimeframe.week, selectedTimeframe),
+                    _buildTimeframeTab(
+                        ref, HistoryTimeframe.month, selectedTimeframe),
                   ],
                 ),
               ),
@@ -68,18 +83,30 @@ class HistoryScreen extends ConsumerWidget {
                       AppColors.heartRate,
                       isDark,
                     ),
-                    Container(height: 36, width: 1, color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                    Container(
+                        height: 36,
+                        width: 1,
+                        color: isDark
+                            ? AppColors.borderDark
+                            : AppColors.borderLight),
                     _buildAverageStat(
                       "Avg SpO₂",
                       "${averages['avgSpo2']?.toStringAsFixed(0) ?? '--'}%",
                       AppColors.spo2,
                       isDark,
                     ),
-                    Container(height: 36, width: 1, color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                    Container(
+                        height: 36,
+                        width: 1,
+                        color: isDark
+                            ? AppColors.borderDark
+                            : AppColors.borderLight),
                     _buildAverageStat(
-                      "Avg Temp",
+                      "Avg IR Temp",
                       settings.isFahrenheit
-                          ? (averages['avgTemp'] == null ? '-- °F' : "${(averages['avgTemp']! * 9 / 5 + 32).toStringAsFixed(1)} °F")
+                          ? (averages['avgTemp'] == null
+                              ? '-- °F'
+                              : "${(averages['avgTemp']! * 9 / 5 + 32).toStringAsFixed(1)} °F")
                           : "${averages['avgTemp']?.toStringAsFixed(1) ?? '--'} °C",
                       AppColors.temperature,
                       isDark,
@@ -134,15 +161,17 @@ class HistoryScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(20),
                 borderRadius: 20,
                 child: VitalsTrendChart(
-                  title: "Body Temperature Trend",
+                  title: "IR Surface Temperature Trend",
                   unit: settings.isFahrenheit ? "°F" : "°C",
                   lineColor: AppColors.temperature,
                   records: records,
-                  valueSelector: (e) => e.temperature == null ? null : settings.isFahrenheit
-                      ? (e.temperature! * 9 / 5 + 32)
-                      : e.temperature,
-                  minY: settings.isFahrenheit ? 94.0 : 35.0,
-                  maxY: settings.isFahrenheit ? 104.0 : 40.0,
+                  valueSelector: (e) => e.temperature == null
+                      ? null
+                      : settings.isFahrenheit
+                          ? (e.temperature! * 9 / 5 + 32)
+                          : e.temperature,
+                  minY: temperatureChartMin,
+                  maxY: temperatureChartMax,
                 ),
               ),
               const SizedBox(height: 24),
@@ -153,7 +182,8 @@ class HistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildTimeframeTab(WidgetRef ref, HistoryTimeframe tf, HistoryTimeframe selected) {
+  Widget _buildTimeframeTab(
+      WidgetRef ref, HistoryTimeframe tf, HistoryTimeframe selected) {
     final isSelected = tf == selected;
     return Expanded(
       child: InkWell(
@@ -178,7 +208,8 @@ class HistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildAverageStat(String label, String value, Color color, bool isDark) {
+  Widget _buildAverageStat(
+      String label, String value, Color color, bool isDark) {
     return Column(
       children: [
         Text(

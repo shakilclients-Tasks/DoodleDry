@@ -9,11 +9,9 @@ import '../../../device_connection/presentation/providers/device_connection_prov
 import '../../../device_connection/presentation/screens/device_connection_screen.dart';
 import '../../../diagnostics/presentation/screens/diagnostics_screen.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
-import '../../../simulation/presentation/widgets/simulation_control_sheet.dart';
 import '../widgets/device_status_card.dart';
 import '../widgets/fall_alert_banner.dart';
 import '../widgets/quick_vital_card.dart';
-import '../widgets/simulation_banner.dart';
 
 class DashboardScreen extends ConsumerWidget {
   final ValueChanged<int> onNavigateToTab;
@@ -30,14 +28,17 @@ class DashboardScreen extends ConsumerWidget {
     return 'Good Evening';
   }
 
-  String _vitalStatus(BabySensorData data, SensorState state, {bool fingerSensor = false}) {
+  String _vitalStatus(BabySensorData data, SensorState state,
+      {bool fingerSensor = false}) {
     if (!data.isDeviceConnected) return 'Device Disconnected';
     if (data.dataQuality == SensorDataQuality.stale) return 'Updating...';
     if (state == SensorState.active) return 'Live Reading';
     if (state == SensorState.poorSignal) return 'Adjust Finger';
     if (state == SensorState.measuring) return 'Measuring...';
     if (state == SensorState.error) return 'Sensor Unavailable';
-    if (fingerSensor && data.fingerDetected == false) return 'Waiting for Finger';
+    if (fingerSensor && data.fingerDetected == false) {
+      return 'Waiting for Finger';
+    }
     return 'Sensor Unavailable';
   }
 
@@ -58,11 +59,9 @@ class DashboardScreen extends ConsumerWidget {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
-            if (settings.isSimulationMode) {
-              ref.read(simulationEngineProvider).resetToNormal();
-            } else {
-              await ref.read(deviceConnectionNotifierProvider.notifier).startScan();
-            }
+            await ref
+                .read(deviceConnectionNotifierProvider.notifier)
+                .startScan();
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -80,7 +79,9 @@ class DashboardScreen extends ConsumerWidget {
                         Text(
                           '${_getGreeting()}, $parentName',
                           style: AppTextStyles.titleLarge.copyWith(
-                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -103,7 +104,9 @@ class DashboardScreen extends ConsumerWidget {
                                   ? '$babyName is being monitored'
                                   : '$babyName — Waiting for device data',
                               style: AppTextStyles.bodySmall.copyWith(
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -118,14 +121,18 @@ class DashboardScreen extends ConsumerWidget {
                           color: isDark ? AppColors.cardDark : Colors.white,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                            color: isDark
+                                ? AppColors.borderDark
+                                : AppColors.borderLight,
                           ),
                         ),
-                        child: const Icon(Icons.bluetooth_searching_rounded, size: 20),
+                        child: const Icon(Icons.bluetooth_searching_rounded,
+                            size: 20),
                       ),
                       onPressed: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const DeviceConnectionScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const DeviceConnectionScreen()),
                         );
                       },
                     ),
@@ -133,28 +140,14 @@ class DashboardScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
 
-                // 2. Simulation Banner (if active)
-                if (settings.isSimulationMode)
-                  SimulationBanner(
-                    onTapControls: () {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => const SimulationControlSheet(),
-                      );
-                    },
-                  ),
-
                 // 3. Fall Detected Critical Alert Banner
-                if (sensorData.isDeviceConnected && sensorData.motionState == SensorState.active && sensorData.fallDetected == true)
+                if (sensorData.isDeviceConnected &&
+                    sensorData.motionState == SensorState.active &&
+                    sensorData.fallDetected == true)
                   FallAlertBanner(
-                    onDismiss: () {
-                      if (settings.isSimulationMode) {
-                        ref.read(simulationEngineProvider).clearFallEvent();
-                      }
-                    },
-                    onViewDetails: () => onNavigateToTab(3), // Navigate to Alerts tab
+                    onDismiss: () {},
+                    onViewDetails: () =>
+                        onNavigateToTab(3), // Navigate to Alerts tab
                   ),
 
                 // 4. Large Device Status Card
@@ -163,12 +156,14 @@ class DashboardScreen extends ConsumerWidget {
                   connectionState: connectionState,
                   onDiagnosticsTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const DiagnosticsScreen()),
                     );
                   },
                   onDeviceTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const DeviceConnectionScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const DeviceConnectionScreen()),
                     );
                   },
                 ),
@@ -181,7 +176,9 @@ class DashboardScreen extends ConsumerWidget {
                     Text(
                       'REAL-TIME VITALS',
                       style: AppTextStyles.label.copyWith(
-                        color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                        color: isDark
+                            ? AppColors.textMutedDark
+                            : AppColors.textMutedLight,
                         letterSpacing: 1.0,
                         fontWeight: FontWeight.w700,
                       ),
@@ -207,16 +204,21 @@ class DashboardScreen extends ConsumerWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisSpacing: 14,
                   mainAxisSpacing: 14,
-                  childAspectRatio: MediaQuery.sizeOf(context).width < 380 ? 0.82 : 1.0,
+                  childAspectRatio:
+                      MediaQuery.sizeOf(context).width < 380 ? 0.82 : 1.0,
                   children: [
                     // Heart Rate
                     QuickVitalCard(
                       label: 'Heart Rate',
-                      value: (sensorData.isDeviceConnected && sensorData.heartRateState == SensorState.active && sensorData.heartRate != null)
+                      value: (sensorData.isDeviceConnected &&
+                              sensorData.heartRateState == SensorState.active &&
+                              sensorData.heartRate != null)
                           ? sensorData.heartRate!.toStringAsFixed(0)
                           : '--',
                       unit: 'BPM',
-                      statusText: _vitalStatus(sensorData, sensorData.heartRateState, fingerSensor: true),
+                      statusText: _vitalStatus(
+                          sensorData, sensorData.heartRateState,
+                          fingerSensor: true),
                       icon: Icons.favorite_rounded,
                       accentColor: AppColors.heartRate,
                       bgColor: AppColors.heartRateBg,
@@ -226,12 +228,15 @@ class DashboardScreen extends ConsumerWidget {
 
                     // SpO2
                     QuickVitalCard(
-                      label: 'SpO₂ Oxygen',
-                      value: (sensorData.isDeviceConnected && sensorData.spo2State == SensorState.active && sensorData.spo2 != null)
+                      label: 'SpO₂ Estimate',
+                      value: (sensorData.isDeviceConnected &&
+                              sensorData.spo2State == SensorState.active &&
+                              sensorData.spo2 != null)
                           ? sensorData.spo2!.toStringAsFixed(0)
                           : '--',
                       unit: '%',
-                      statusText: _vitalStatus(sensorData, sensorData.spo2State, fingerSensor: true),
+                      statusText: _vitalStatus(sensorData, sensorData.spo2State,
+                          fingerSensor: true),
                       icon: Icons.air_rounded,
                       accentColor: AppColors.spo2,
                       bgColor: AppColors.spo2Bg,
@@ -241,14 +246,19 @@ class DashboardScreen extends ConsumerWidget {
 
                     // Temperature
                     QuickVitalCard(
-                      label: 'Body Temp',
-                      value: sensorData.isDeviceConnected && sensorData.temperatureState == SensorState.active && sensorData.temperature != null
+                      label: 'IR Surface Temp',
+                      value: sensorData.isDeviceConnected &&
+                              sensorData.temperatureState ==
+                                  SensorState.active &&
+                              sensorData.temperature != null
                           ? (settings.isFahrenheit
-                              ? sensorData.temperatureInFahrenheit!.toStringAsFixed(1)
+                              ? sensorData.temperatureInFahrenheit!
+                                  .toStringAsFixed(1)
                               : sensorData.temperature!.toStringAsFixed(1))
                           : '--',
                       unit: settings.isFahrenheit ? '°F' : '°C',
-                      statusText: _vitalStatus(sensorData, sensorData.temperatureState),
+                      statusText:
+                          _vitalStatus(sensorData, sensorData.temperatureState),
                       icon: Icons.thermostat_rounded,
                       accentColor: AppColors.temperature,
                       bgColor: AppColors.temperatureBg,
@@ -268,12 +278,17 @@ class DashboardScreen extends ConsumerWidget {
                           activityStatusText = 'Device Disconnected';
                           activityIcon = Icons.sensors_off_rounded;
                           activityAccent = AppColors.textMutedLight;
-                          activityBg = isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
-                        } else if (sensorData.motionState != SensorState.active) {
+                          activityBg = isDark
+                              ? AppColors.surfaceDark
+                              : AppColors.surfaceLight;
+                        } else if (sensorData.motionState !=
+                            SensorState.active) {
                           activityStatusText = 'Sensor Unavailable';
                           activityIcon = Icons.sensors_off_rounded;
                           activityAccent = AppColors.textMutedLight;
-                          activityBg = isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
+                          activityBg = isDark
+                              ? AppColors.surfaceDark
+                              : AppColors.surfaceLight;
                         } else if (sensorData.fallDetected == true) {
                           activityStatusText = 'FALL DETECTED!';
                           activityIcon = Icons.crisis_alert_rounded;
@@ -303,7 +318,9 @@ class DashboardScreen extends ConsumerWidget {
                               activityStatusText = 'Gentle Movement';
                               activityIcon = Icons.visibility_rounded;
                               activityAccent = AppColors.primary;
-                              activityBg = isDark ? const Color(0xFF1E3A4C) : const Color(0xFFE0F2FE);
+                              activityBg = isDark
+                                  ? const Color(0xFF1E3A4C)
+                                  : const Color(0xFFE0F2FE);
                               break;
                             case 'active':
                               activityStatusText = 'Moving / Active';
@@ -327,7 +344,8 @@ class DashboardScreen extends ConsumerWidget {
 
                         return QuickVitalCard(
                           label: 'Activity',
-                          value: sensorData.isDeviceConnected && sensorData.motionState == SensorState.active
+                          value: sensorData.isDeviceConnected &&
+                                  sensorData.motionState == SensorState.active
                               ? (sensorData.fallDetected == true
                                   ? 'FALL ALERT'
                                   : sensorData.formattedActivity)
@@ -352,10 +370,13 @@ class DashboardScreen extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: isDark ? AppColors.surfaceDark : const Color(0xFFF1F5F9),
+                    color: isDark
+                        ? AppColors.surfaceDark
+                        : const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                      color:
+                          isDark ? AppColors.borderDark : AppColors.borderLight,
                     ),
                   ),
                   child: Row(
@@ -363,14 +384,18 @@ class DashboardScreen extends ConsumerWidget {
                       Icon(
                         Icons.shield_outlined,
                         size: 20,
-                        color: isDark ? AppColors.textMutedDark : AppColors.textSecondaryLight,
+                        color: isDark
+                            ? AppColors.textMutedDark
+                            : AppColors.textSecondaryLight,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           "DOODLEDRY is a caregiver assistance and monitoring tool, not an automated diagnostic device. Consult medical professionals for clinical evaluation.",
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: isDark ? AppColors.textMutedDark : AppColors.textSecondaryLight,
+                            color: isDark
+                                ? AppColors.textMutedDark
+                                : AppColors.textSecondaryLight,
                             fontSize: 11,
                             height: 1.35,
                           ),
